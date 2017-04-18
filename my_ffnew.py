@@ -18,7 +18,7 @@ dc = {}              # dictionary for important param
 stages  = 0          # to enter clickStart soubroutine step-by-step
 answerflag = 0       # Flag=1 means subject has responded
 targetdist = 0.15    # move 15 cm from the center position (default!)
-movetime = 0.9	     # 900 msec default movement speed to a target
+waittime = 1.0       # 1500 msec general wait/delay time 
 
 dc['post'] = 0 # (0: hand moving to start-not ready, 
 #                     1: hand within/in the start position,
@@ -68,14 +68,14 @@ def getCenter():
 # Initiate movement to the center (start) coordinate
 def goToCenter(speed):
     # Ensure this is a null field first (because we will be updating the position)
-    #ananda.controller(0)
+    ananda.controller(0)
     print("  Now moving to center: %f,%f"%dc['center'])
     # Send command to move to cx,cy
-    #ananda.move_stay(dc['center'][0],dc['center'][1],speed)
-    #ananda.status = ananda.move_is_done()
-    #while not #ananda.status:   # check if movement is done
-        #ananda.status = ananda.move_is_done()
-        #time.sleep(0.07)
+    ananda.move_stay(dc['center'][0],dc['center'][1],speed)
+    ananda.status = ananda.move_is_done()
+    while not ananda.status:   # check if movement is done
+        ananda.status = ananda.move_is_done()
+        time.sleep(0.07)
     print("  Movement completed!")
     # Put flag to 1, indicating robot handle @ center position
     dc['post'] = 1
@@ -110,7 +110,7 @@ def clickStart(event):
         e1.config(state='disabled')
         e2.config(state='disabled')
         getCenter()
-        goToCenter(3)
+        goToCenter(2)
         print "Press <Enter> or Quit-button to continue!\n"
         stages = 2
 
@@ -149,46 +149,59 @@ def practiceLoop():
 def mainLoop():
     print("Entering main-Loop now.........")
     #playAudio()
-    showStart("white")   # Display center position!
+    minvel, maxvel   = dc['mydesign']['settings']["velmin"], dc['mydesign']['settings']["velmax"]
 
+    showStart("white")   # Display center position!
+   
     # As the 1st element contains non-trial related setting, we remove it!
-    for xxx in dc['mydesign'][1:]:
+    for xxx in dc['mydesign']['trials']:
         index   = xxx['trial']
         FFset   = xxx['FField']
         angle   = xxx['angle']
         Feedback= xxx['feedback']
         Score   = xxx['scoreOn']
         Cursor  = xxx['cursorOn']
-        homewait= xxx['homewait']
-        targetwait= xxx['targetwait']
+        bias = [xxx["minbias"], xxx["maxbias"]]
 
         print("\nNew Round- " + str(index))
-        time.sleep(homewait/1000)
-        #dc['logAnswer'] = str(index) + " "   # string to be saved later!
-        to_target(105)  # <<<<<
+        win.itemconfig("start", fill="white")  # Make start circle white again
 
-        print("  Waiting for " + str(targetwait) + "msec")
-        time.sleep(targetwait/1000)
+    	# Release robot_stay() to allow movement...
+    	ananda.controller(0)
+        time.sleep(waittime)
+        to_target(angle, bias)  # <<<<<
+
+        time.sleep(waittime)
         dc['post'] = 0    # Reset position!
         goToCenter(1.5)   # Go back to center!
-        time.sleep(targetwait/1000)
+        time.sleep(0.3)
 
-	#print(dc['logAnswer'])
-	#with open(dc['logpath'],'aw') as log_file:
-         #      print("  Saving trial log.....")
-          #     log_file.write(dc['logAnswer'])  # Save every trial as text line
+	print(dc['logAnswer'])
+        saveLog()   # Call save function
+    print("\n#### NOTE = Test has ended!!")
 
-    print("\nNOTE = Test has ended!")
+
+# Function save logfile and mkdir if needed
+def saveLog():
+    print("---Saving trial log.....")   
+    if not os.path.exists(dc['logpath']):
+	os.makedirs(dc['logpath'])
+    with open(dc['logpath']+"motorLog_"+dc['logfileID']+".txt",'aw') as log_file:
+        log_file.write(dc['logAnswer'])  # Save every trial as text line
 
 
 
 # This handles the whole segment when subject moves to hidden target
-def to_target(angle):
+def to_target(angle, bias):
     notcompleted = 1
     dc['post'] = 1;  dc['subjx']= 0;  dc['subjy']= 0
     # Ref direction= If straight-ahead is defined as 90 degree
     angle = angle - 90
-    showTarget(angle,"green")
+    try:
+	win.delete("target")
+    except:
+	pass
+    showTarget(angle,"white")  # Each trial begins with a fresh target bar
 
     while notcompleted:
         # First read out instant x,y robot position
@@ -205,7 +218,7 @@ def to_target(angle):
         try:
 	   win.delete("hand", "handbar")
 	except:
-	   break
+	   pass
         # Redraw instant visual feedback on canvas again!
         showCursorBar(angle)
 
@@ -214,12 +227,11 @@ def to_target(angle):
         time.sleep(0.005)
 
         vx, vy = ananda.rshm('fsoft_xvel'), ananda.rshm('fsoft_yvel')
-        print(dc['post'])
+        #print(dc['post'])
         #print(math.sqrt(vx**2+vy**2))
-        #print dc['subjd']
-
+ 
         if (dc['subjd'] < 0.01) & (dc['post'] == 1) & (math.sqrt(vx**2+vy**2) < 0.01):
-            # Check: hand is stationary within the start position?
+            # Check: hand is stationary within the start position? Green is the go signal!
             win.itemconfig("start", fill="green")
             dc['post'] = 2
         elif (dc['subjd']> 0.01) & (dc['post'] == 2):
@@ -228,10 +240,12 @@ def to_target(angle):
             dc['post'] = 3
         elif (dc['subjd'] > 0.12) & (dc['post'] == 3) & (math.sqrt(vx**2+vy**2) < 0.01):
             # Check: hand has reached target and now stationary?
+            ananda.stay()
             myspeed = 1000*(time.time() - start_time)
-            print("Movement duration = %.1f msec"%(myspeed))
-            checkEndpoint(angle,-20,20)
+            print("  Movement duration = %.1f msec"%(myspeed))
+            checkEndpoint(angle,bias[0],bias[1])
             notcompleted = 0
+
 
 
 ######## Some parameters that specify how we draw things onto our GUI window
@@ -326,22 +340,22 @@ def robot_canvas():
     
 def showStart(color="white"):
     #print("  Showing start position on the screen...")
-    minx, miny = rob_to_screen(dc['center'][0] - cursor_size, 
-                               dc['center'][1] - cursor_size)
-    maxx, maxy = rob_to_screen(dc['center'][0] + cursor_size, 
-                               dc['center'][1] + cursor_size)
+    minx, miny = rob_to_screen(dc['center'][0] - 0.006 - cursor_size, 
+                               dc['center'][1] - 0.003 - cursor_size)
+    maxx, maxy = rob_to_screen(dc['center'][0] - 0.006 + cursor_size, 
+                               dc['center'][1] - 0.003 + cursor_size)
 
     # Draw start circle. NOTE: Use 'tag' as an identity of a canvas object!
     win.create_oval( minx,miny,maxx,maxy, fill=color, tag="start" )
 
     
 def showCursorBar(angle, color="yellow"):
-    # Hand is now at the center? If beyond start circle, remove hand cursor
-    if dc['subjd'] < 0.09:
-    	# Prepare to draw current hand cursor in the screen coordinate!
-    	# Edited: The robot handle coordinate isn't really centered!
-    	x1, y1 = rob_to_screen(dc['subjx']-0.01,  dc['subjy']-0.007)
-    	x2, y2 = rob_to_screen(dc['subjx']-0.003, dc['subjy'])
+    # Prepare to draw current hand cursor in the screen coordinate!
+    # Edited: The robot handle coordinate isn't really centered!
+    x1, y1 = rob_to_screen(dc['subjx']-0.01,  dc['subjy']-0.007)
+    x2, y2 = rob_to_screen(dc['subjx']-0.003, dc['subjy'])
+
+    if dc['subjd'] < 1.015:  # If hand position is beyond start circle, remove cursor!
     	# Draw current hand cursor, again provide a 'tag' to it.
     	win.create_oval( x1,y1,x2,y2, fill=color, width=0, tag="hand")
 
@@ -352,7 +366,7 @@ def showCursorBar(angle, color="yellow"):
     xy = [(0,miny), (w,miny), (w,maxy), (0,maxy)]
     cursorbar = win.create_polygon(xy, fill=color, tag="handbar")
 
-    # Define pivot point as the center (start) position, but in screen coordinate!
+    # Then, define pivot point as the current hand position, but in screen coordinate!
     pivot = complex(0.5*(x1+x2), 0.5*(y1+y2))
     # We now rotate the target bar using complex number operation
     inrad  = angle*math.pi/180
@@ -366,31 +380,31 @@ def showCursorBar(angle, color="yellow"):
     
 
 def showTarget(angle, color="white"):
-    #print("  Showing target bar on the screen...")
+    print("  Showing target bar on the screen...")
     minx, miny = rob_to_screen(dc['center'][0], 
                                dc['center'][1] - target_thick + targetdist)
     maxx, maxy = rob_to_screen(dc['center'][0], 
                        	       dc['center'][1] + target_thick + targetdist)
-    print minx,miny,maxx,maxy
+
     # First draw target bar with a polygon assuming it's in front (straightahead) 
     xy = [(0,miny), (w,miny), (w,maxy), (0,maxy)]
     win.create_polygon(xy, fill=color, tag="target")
 
     # Then, define a pivot point as the center (start) position
-    dc['pivot'] = complex(dc['center.scr'][0],dc['center.scr'][1])
+    pivot = complex(dc['center.scr'][0],dc['center.scr'][1])
     # We now rotate the target bar using complex number operation
     inrad  = angle*math.pi/180
     rot    = complex(math.cos(inrad),math.sin(inrad))
     newxy = []
     for x, y in xy:
-        v = rot * (complex(x,y) - dc['pivot']) + dc['pivot']
+        v = rot * (complex(x,y) - pivot) + pivot
         newxy.append(v.real)
         newxy.append(v.imag)
     win.coords("target", *newxy)  # Edit coordinates by calling the tag!
     
     # Maybe useful to capture rotated target center too!
     tx, ty = rob_to_screen(dc['center'][0], dc['center'][1] + targetdist)
-    trot = rot * (complex(tx,ty) - dc['pivot']) + dc['pivot']
+    trot = rot * (complex(tx,ty) - pivot) + pivot
     dc['target.ctr'] = [trot.real, trot.imag]
     win.create_oval( trot.real, trot.imag,trot.real+2, trot.imag+2, width=5 )
 
@@ -398,18 +412,27 @@ def showTarget(angle, color="white"):
 def checkEndpoint(angle, minbias, maxbias):
     print("  Checking end-position inside target zone?")
     # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
-    inrad  = -angle*math.pi/180
-    tx, ty = dc['subjx'], dc['subjy']
-    rot    = complex(math.cos(inrad),math.sin(inrad))
-    trot   = rot * (complex(tx, ty) - dc['pivot']) + dc['pivot']
-    print "  Deviation from target center= %f" %trot.imag
-    
+    inrad = -angle*math.pi/180
+    pivot = complex(dc['center'][0],dc['center'][1])   # In robot coordinate...
+    tx,ty = dc['subjx'], dc['subjy']
+    rot  = complex(math.cos(inrad),math.sin(inrad))
+    trot = rot * (complex(tx, ty) - pivot) + pivot
+    PDy  = trot.real-dc['center'][0]
+    print "  Lateral deviation = %f" %PDy
+
     # Check the condition to display explosion when required!
-    if (trot.imag > minbias) & (trot.imag < maxbias):
+    if (PDy > minbias) & (PDy < maxbias):
+        status = 1  # 1: rewarded, 0: failed
         dc['scores'] = dc['scores'] + 10
-        print "  Explosion delivered! Current score: " + dc['scores']
+        print "  Explosion delivered! Current score: %d"%(dc['scores'])
         showImage("/pictures/score" + str(dc['scores']) + ".gif")
-        showImage("/pictures/Explosion_final.gif")   
+        showImage("/pictures/Explosion_final.gif")  
+    else: 
+        status = 0
+
+    # Preparing logfile content....
+    dc['logAnswer'] = str(PDy) + " " + str(angle+90) + " " + str(status) + " " + str(tx) + " " + str(ty) + "\n"
+
     
 
 def showImage(name, px=w/2, py=h/2):

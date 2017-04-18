@@ -6,7 +6,7 @@ This code is used for somatosensory working memory test. It has the same princip
 as the old code created in Tcl for the old suzuki machine.
 """
 
-import robot.dummy as ananda
+import robot.interface as ananda
 import os.path
 import time
 import json
@@ -27,7 +27,7 @@ mypwd   = os.getcwd() # retrieve code current directory
 ####### Create various functions using 'def' keyword
 # Subroutine to EXIT the program and stop everything.
 def quit():
-    root.destroy()
+    master.destroy()
     global keep_going
     keep_going = False
     ananda.unload()  # Close/kill robot process
@@ -52,12 +52,12 @@ def getCenter():
                       dc['logpath']+subjid.get()+"_center.txt", "r").readlines()]
         #print(center)
         print("Loading existing coordinate: %f, %f"%(center[0][0],center[0][1]))
-        dc['center.pos'] = (center[0][0],center[0][1])       
+        dc['center'] = (center[0][0],center[0][1])       
     else:
         print("This is a new subject. Center position saved.")
-        dc['center.pos'] = ananda.rshm('x'),ananda.rshm('y')
+        dc['center'] = ananda.rshm('x'),ananda.rshm('y')
         txt_file = open(dc['logpath']+subjid.get()+"_center.txt", "w")
-        txt_file.write("%f,%f"%dc['center.pos'])
+        txt_file.write("%f,%f"%dc['center'])
         txt_file.close()
 
 
@@ -65,9 +65,9 @@ def getCenter():
 def goToCenter(speed):
     # Ensure this is a null field first (because we will be updating the position)
     ananda.controller(0)
-    print("  Now moving to center: %f,%f"%dc['center.pos'])
+    print("  Now moving to center: %f,%f"%dc['center'])
     # Send command to move to cx,cy
-    ananda.move_stay(dc['center.pos'][0],dc['center.pos'][1],speed)
+    ananda.move_stay(dc['center'][0],dc['center'][1],speed)
     ananda.status = ananda.move_is_done()
     while not ananda.status:   # check if movement is done
         ananda.status = ananda.move_is_done()
@@ -129,8 +129,8 @@ def doAnswer(index):
     global answerflag
     print("Waiting for subject's response")
     while (not answerflag):
-        root.update_idletasks()
-        root.update()
+        master.update_idletasks()
+        master.update()
         time.sleep(0.3)
     RT = 1000*(time.time() - start_time)  # RT in m-sec
     RT = "%d"%RT
@@ -154,8 +154,8 @@ def clickNo(event):
 # Convert angle direction to coordinates w.r.t center position
 def angle_pos(theta):
     theta_rad = theta*math.pi/180 # convert to radian
-    targetX = targetdist * math.cos(theta_rad) + dc['center.pos'][0]
-    targetY = targetdist * math.sin(theta_rad) + dc['center.pos'][1]
+    targetX = targetdist * math.cos(theta_rad) + dc['center'][0]
+    targetY = targetdist * math.sin(theta_rad) + dc['center'][1]
     print("  Moving to %f, %f"%(targetX,targetY))
     ananda.move_stay(targetX, targetY, movetime)
     ananda.status = ananda.move_is_done()
@@ -229,25 +229,31 @@ def saveLog():
 
 
 # Some parameters that specify how we draw things onto our window
+w, h = 1920,1080
 robot_scale = 700
 cursor_size = 10
 target_size = 5
 
-root = Tk()		# This creates an empty background window
-root.geometry('%dx%d+%d+%d' % (370, 150, 500, 200))   # Nice geometry setting!!
-root.title("Somatic Working Memory Test")
-root.protocol("WM_DELETE_WINDOW", quit)
+from Tkinter import * # Importing the Tkinter library
+master  = Tk()	      # Create an empty background window for GUI
+samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
+                      # Interesting, you shouldn't have 2 Tk() instances, use Toplevel()
+	              # and this will solve the problem of pyimage not displayed
+
+master.geometry('%dx%d+%d+%d' % (370, 150, 500, 200))   # Nice geometry setting!!
+master.title("Somatic Working Memory Test")
+master.protocol("WM_DELETE_WINDOW", quit)
 
 subjid  = StringVar()
 filenum = StringVar()
 mymsg   = StringVar()
 
 def mainGUI():
-    # Create two different frames on the root -----
-    topFrame = Frame(root, width=400, height=100)
+    # Create two different frames on the master -----
+    topFrame = Frame(master, width=400, height=100)
     topFrame.pack(side=TOP, expand = 1)
     #frame.bind('<Left>', leftKey)
-    bottomFrame = Frame(root, bg="white", width=400, height=100)
+    bottomFrame = Frame(master, bg="white", width=400, height=100)
     bottomFrame.pack(side=BOTTOM, expand = 1)
     
     # Important: This maintains frame size, no shrinking
@@ -282,10 +288,17 @@ def mainGUI():
     myButton3.grid(row=1, column=1, padx = 10, pady = 5)
 
 
+def robot_canvas():
+    # Indicate the canvas as global so I can access it from outside....
+    global win
+    win = Canvas(samsung, width=w, height=h)
+    win.pack()
+    win.create_rectangle(0, 0, w, h, fill="white")
 
-root.bind('<Return>', clickStart)
-root.bind('<Left>'  , clickYes)
-root.bind('<Right>' , clickNo)
+
+master.bind('<Return>', clickStart)
+master.bind('<Left>'  , clickYes)
+master.bind('<Right>' , clickNo)
 
 os.system("clear")
 
@@ -296,16 +309,17 @@ print("---Now reading stiffness")
 ananda.rshm('plg_stiffness')
 
 mainGUI()
+robot_canvas()
 
 keep_going = True
 
 while keep_going:
     # Although it maintains a main loop, this routine blocks! Use update() instead...
-    #root.mainloop()
+    #master.mainloop()
     #routine_checks()
 
-    root.update_idletasks()
-    root.update()
+    master.update_idletasks()
+    master.update()
     time.sleep(0.1) # frame rate of our GUI update
 
 
