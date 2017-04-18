@@ -1,7 +1,7 @@
 from tkinter import *
 
 import time
-import robot.interface as robot
+import robot.interface as ananda
 
 import numpy as np
 
@@ -10,11 +10,11 @@ import numpy as np
 # Some parameters that specify how we draw things onto our window
 w,h = 800,600
 cw,ch = w/2,h/2
-robot_scale = 700
+ananda_scale = 700
 cursor_size = 10
 target_size = 5
 
-robot_move_time = 3.
+ananda_move_time = 3.
 
 done_targets = []   # targets that are "done" (we have already moved to them)
 targets = []        # targets we are to move to in the future
@@ -34,24 +34,24 @@ SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
 replaying = False   # whether we are currently replaying something
 
 
-robot.load()
-robot.bias_force_transducers()
-#robot.stay() # stay put
-robot.status()
+ananda.load()
+ananda.bias_force_transducers()
+#ananda.stay() # stay put
+ananda.status()
 
 
 
 
 
 def rob_to_screen(x,y):
-    # Convert robot coordinates into screen coordinates
-    return (cw + x*robot_scale,ch - y*robot_scale)
+    # Convert ananda coordinates into screen coordinates
+    return (cw + x*ananda_scale,ch - y*ananda_scale)
 
 
 def screen_to_rob(x,y):
-    # Convert screen coordinates into robot coordinates
-    return ( (x-cw)/float(robot_scale),
-             (y-ch)/float(-robot_scale) )
+    # Convert screen coordinates into ananda coordinates
+    return ( (x-cw)/float(ananda_scale),
+             (y-ch)/float(-ananda_scale) )
 
 
 
@@ -85,10 +85,10 @@ def initiate_move():
     global moving
 
     # Initiate move to the next target
-    robot.controller(0) # Make this a null field first (because we will be updating the position)
+    ananda.controller(0) # Make this a null field first (because we will be updating the position)
     rx,ry=targets[0]["x"],targets[0]["y"]
     print("Initiate move to %f,%f"%(rx,ry))
-    robot.move_to(rx,ry,robot_move_time)
+    ananda.move_to(rx,ry,ananda_move_time)
     
     moving = True
         
@@ -174,7 +174,7 @@ def smooth(x):
 
 def routine_checks():
     """ Stuff we need to keep doing. """
-    # Check if a move is completed, if so, have the robot stay put.
+    # Check if a move is completed, if so, have the ananda stay put.
     global targets
     global moving
     global done_targets
@@ -182,10 +182,10 @@ def routine_checks():
     global replaying
 
     if replaying:
-        if robot.replay_is_done():
+        if ananda.replay_is_done():
             print("Detected end of replay.")
             replaying = False
-            robot.stay()
+            ananda.stay()
         return
     
     
@@ -194,8 +194,8 @@ def routine_checks():
         t = time.time()
         if t-capture_start > CAPTURE_DURATION:
             print("Capturing complete")
-            robot.controller(0)
-            raw_traj = list(robot.retrieve_trajectory()) # retrieve the captured trajectory from the robot memory
+            ananda.controller(0)
+            raw_traj = list(ananda.retrieve_trajectory()) # retrieve the captured trajectory from the ananda memory
 
             # Smooth it
             x,y = zip(*raw_traj)
@@ -203,8 +203,8 @@ def routine_checks():
 
             global trajectory
             trajectory = list(zip(xfilt,yfilt))
-            # Re-insert the filtered trajectory into the robot
-            robot.prepare_replay(trajectory) # push the trajectory back to robot memory for replaying (and set the final positions appropriately)
+            # Re-insert the filtered trajectory into the ananda
+            ananda.prepare_replay(trajectory) # push the trajectory back to ananda memory for replaying (and set the final positions appropriately)
 
             draw_trajectory()
             capturing = False
@@ -212,7 +212,7 @@ def routine_checks():
     
     if moving: # If we are currently in the middle of moving to a target
 
-        if robot.move_is_done(): # check if we are done
+        if ananda.move_is_done(): # check if we are done
 
             # Remove the last target
             if len(targets)>0: # this should always be true actually
@@ -227,7 +227,7 @@ def routine_checks():
 
             # If now there is no more target to go to
             if len(targets)==0:
-                robot.stay()
+                ananda.stay()
 
     if not moving and not capturing:
         if len(targets)>0:
@@ -241,7 +241,7 @@ def on_closing():
     global keep_going
     keep_going = False
     master.destroy()
-    robot.unload()
+    ananda.unload()
 
 
 
@@ -250,7 +250,7 @@ def on_closing():
     
     
 def release():
-    """ Release the robot (null field)."""
+    """ Release the ananda (null field)."""
 
     global done_targets
     global targets
@@ -259,14 +259,14 @@ def release():
     oldtargets = targets[:]
     targets = []
     
-    # In case the robot might be actively moving, it will be good
+    # In case the ananda might be actively moving, it will be good
     # to first hold it at the current position for a moment and then
     # release it, to make sure that it is still when released.
-    robot.stay()
+    ananda.stay()
     t0 = time.time()
     while time.time()-t0 < 1.: # wait one second
         pass
-    robot.controller(0) # null field
+    ananda.controller(0) # null field
 
     # Remove the targets from the interface
     for targ in oldtargets+done_targets:
@@ -279,7 +279,7 @@ def release():
 
 
 def capture():
-    """ This will capture the robot position """
+    """ This will capture the ananda position """
     global capturing
     global trajectory
     global capture_start
@@ -290,7 +290,7 @@ def capture():
             release() # we have to be in a null field to be capturing
 
         # Capture the trajectory
-        trajectory = robot.start_capture()
+        trajectory = ananda.start_capture()
         capture_start = time.time()
         capturing = True
         print("Initiated capturing")
@@ -334,7 +334,7 @@ def replay():
         return
 
     print("Starting replay now.")
-    robot.start_replay()
+    ananda.start_replay()
     replaying = True
 
 
@@ -366,22 +366,22 @@ minx,miny = rob_to_screen(-.4,-.2)
 maxx,maxy = rob_to_screen( .4,.3)
 win.create_rectangle(minx,miny,maxx,maxy, outline="blue")
 
-robot_pos = win.create_oval(cw,ch,cw,ch,fill="blue")
+ananda_pos = win.create_oval(cw,ch,cw,ch,fill="blue")
 
 master.protocol("WM_DELETE_WINDOW", on_closing)
 
 
 
 
-def draw_robot():
-    # Update the cursor that indicates the current position of the robot
-    rx,ry = robot.rshm("x"),robot.rshm("y")
+def draw_ananda():
+    # Update the cursor that indicates the current position of the ananda
+    rx,ry = ananda.rshm("x"),ananda.rshm("y")
     #print(rx,ry)
     x,y = rob_to_screen(rx,ry)
-    win.coords(robot_pos,(x-cursor_size,y-cursor_size,x+cursor_size,y+cursor_size))
+    win.coords(ananda_pos,(x-cursor_size,y-cursor_size,x+cursor_size,y+cursor_size))
     global moving
     robcol = "green" if moving else "blue"
-    win.itemconfig(robot_pos,fill=robcol)
+    win.itemconfig(ananda_pos,fill=robcol)
 
 
 
@@ -390,11 +390,11 @@ def draw_robot():
     
 
 keep_going = True
-robot.wshm('plg_moveto_done',1)
+ananda.wshm('plg_moveto_done',1)
 
 while keep_going:
 
-    draw_robot()
+    draw_ananda()
     routine_checks()
 
     master.update_idletasks()

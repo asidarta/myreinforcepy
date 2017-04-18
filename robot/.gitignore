@@ -1,1 +1,4 @@
-html
+*.o
+robot
+probe_addresses*
+field_addresses.txt

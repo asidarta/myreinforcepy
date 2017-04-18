@@ -15,7 +15,7 @@ import math
 from Tkinter import *	# Importing the Tkinter library
 
 # Declare several global variables
-mydict  = {}          # dictionary for important param
+dc= {}                # dictionary for important param
 stages  = 0           # to enter clickStart soubroutine step-by-step
 answerflag = 0        # Flag=1 means subject has responded
 targetdist = 0.15     # move 15 cm from the center position
@@ -46,18 +46,18 @@ def playAudio():
 def getCenter():
     print("---Getting center position. Remain still!")
     # Required to have subject name!
-    if (os.path.isfile(mydict['logpath']+subjid.get()+"_center.txt")):
+    if (os.path.isfile(dc['logpath']+subjid.get()+"_center.txt")):
         #txt = open(mypwd + "/data/and_center.txt", "r").readlines()
         center = [[float(v) for v in txt.split(",")] for txt in open(
-                      mydict['logpath']+subjid.get()+"_center.txt", "r").readlines()]
+                      dc['logpath']+subjid.get()+"_center.txt", "r").readlines()]
         #print(center)
         print("Loading existing coordinate: %f, %f"%(center[0][0],center[0][1]))
-        mydict['center.pos'] = (center[0][0],center[0][1])       
+        dc['center.pos'] = (center[0][0],center[0][1])       
     else:
         print("This is a new subject. Center position saved.")
-        mydict['center.pos'] = ananda.rshm('x'),ananda.rshm('y')
-        txt_file = open(mydict['logpath']+subjid.get()+"_center.txt", "w")
-        txt_file.write("%f,%f"%mydict['center.pos'])
+        dc['center.pos'] = ananda.rshm('x'),ananda.rshm('y')
+        txt_file = open(dc['logpath']+subjid.get()+"_center.txt", "w")
+        txt_file.write("%f,%f"%dc['center.pos'])
         txt_file.close()
 
 
@@ -65,9 +65,9 @@ def getCenter():
 def goToCenter(speed):
     # Ensure this is a null field first (because we will be updating the position)
     ananda.controller(0)
-    print("  Now moving to center: %f,%f"%mydict['center.pos'])
+    print("  Now moving to center: %f,%f"%dc['center.pos'])
     # Send command to move to cx,cy
-    ananda.move_stay(mydict['center.pos'][0],mydict['center.pos'][1],speed)
+    ananda.move_stay(dc['center.pos'][0],dc['center.pos'][1],speed)
     ananda.status = ananda.move_is_done()
     while not ananda.status:   # check if movement is done
         ananda.status = ananda.move_is_done()
@@ -79,17 +79,17 @@ def goToCenter(speed):
 def clickStart(event):
     global stages
     if (stages == 0):
-        mydict['logfileID'] = subjid.get()+filenum.get()
-        mydict['logpath'] = mypwd+"/data/"+subjid.get()+"_data/"
+        dc['logfileID'] = subjid.get()+filenum.get()
+        dc['logpath'] = mypwd+"/data/"+subjid.get()+"_data/"
 
         if not(subjid.get()) or not(filenum.get()):
              print("##Error## Subject ID and/or file numbers are empty!")
         # Added check to ensure existing logfile isn't overwritten
-        elif (os.path.exists(mydict['logpath']+"Som_"+mydict['logfileID']+".txt")):
-             print "Duplicate: "+mydict['logpath']+"Som_"+mydict['logfileID']+".txt" 
+        elif (os.path.exists(dc['logpath']+"Som_"+dc['logfileID']+".txt")):
+             print "Duplicate: "+dc['logpath']+"Som_"+dc['logfileID']+".txt" 
         else:
              print "---Loading for block %s, subject %s..." %(filenum.get(),subjid.get())
-             filepath = mypwd+"/exper_design/"+mydict['logfileID']+".txt"             
+             filepath = mypwd+"/exper_design/"+dc['logfileID']+".txt"             
              #print filepath
              stages = read_design_file(filepath)   # Next stage depends if file loaded successfully
              print "Press <Enter> or Quit-button to continue!\n"
@@ -115,7 +115,7 @@ def clickStart(event):
 def read_design_file(mpath):
     if os.path.exists(mpath):
         with open(mpath,'r') as f:
-            mydict['mydesign'] = json.load(f)
+            dc['mydesign'] = json.load(f)
         print("Design file loaded! Parsing the data...")
         return 1
     else:
@@ -134,28 +134,28 @@ def doAnswer(index):
         time.sleep(0.3)
     RT = 1000*(time.time() - start_time)  # RT in m-sec
     RT = "%d"%RT
-    print("---Trial-"+str(index)+"   ANSWER:"+str(mydict['answer'])+"   RT:"+RT)
+    print("---Trial-"+str(index)+"   ANSWER:"+str(dc['answer'])+"   RT:"+RT)
     answerflag = 0
     return(RT)
 
 def clickYes(event):
     global answerflag
     print "Left key pressed to answer YES!"
-    mydict['answer']=1
+    dc['answer']=1
     answerflag = 1
 
 def clickNo(event):
     global answerflag
     print "Right key pressed to answer NO!"
-    mydict['answer']=0
+    dc['answer']=0
     answerflag = 1
 
 
 # Convert angle direction to coordinates w.r.t center position
 def angle_pos(theta):
     theta_rad = theta*math.pi/180 # convert to radian
-    targetX = targetdist * math.cos(theta_rad) + mydict['center.pos'][0]
-    targetY = targetdist * math.sin(theta_rad) + mydict['center.pos'][1]
+    targetX = targetdist * math.cos(theta_rad) + dc['center.pos'][0]
+    targetY = targetdist * math.sin(theta_rad) + dc['center.pos'][1]
     print("  Moving to %f, %f"%(targetX,targetY))
     ananda.move_stay(targetX, targetY, movetime)
     ananda.status = ananda.move_is_done()
@@ -175,14 +175,14 @@ def to_target(directions):
             time.sleep(targethold)
             goToCenter(1)  # Go back to centre!
             time.sleep(targethold)
-            mydict['logAnswer'] = mydict['logAnswer'] + " " + str(direction)
+            dc['logAnswer'] = dc['logAnswer'] + " " + str(direction)
     else:
         # Else, it means just a test direction or probe!
         print("Probe direction: " + str(directions))
         angle_pos(directions)
         time.sleep(targethold)
         goToCenter(1)  # Go back to centre!
-        mydict['logAnswer'] = mydict['logAnswer'] + " " + str(directions)
+        dc['logAnswer'] = dc['logAnswer'] + " " + str(directions)
 
 
 # Run only for the first time: familiarization trials with instruction.
@@ -198,23 +198,23 @@ def mainLoop():
     print("Entering main-Loop now.........")
     #playAudio()
     #print(ananda.status())
-    for xxx in mydict['mydesign']:
+    for xxx in dc['mydesign']:
         index  = xxx['trial']
         anchors= xxx['anchors']
         probe  = xxx['probe']
         delay  = xxx['delay']
         print("\nNew Round- " + str(index))
         time.sleep(targethold)
-        mydict['logAnswer'] = str(index) + " "   # string to be saved later!
+        dc['logAnswer'] = str(index) + " "   # string to be saved later!
         to_target(anchors)
         print("  Waiting for " + str(delay) + "msec")
         time.sleep(delay/1000)
         to_target(probe)
         RT = doAnswer(index)
-        mydict['logAnswer']=mydict['logAnswer']+ "  ANSWER:"+ str(mydict['answer'])
-        mydict['logAnswer']=mydict['logAnswer']+ "  RT:"    + RT
-        mydict['logAnswer']=mydict['logAnswer']+ "  DELAY:" + str(delay) + "\n"
-        #print(mydict['logAnswer'])
+        dc['logAnswer']=dc['logAnswer']+ "  ANSWER:"+ str(dc['answer'])
+        dc['logAnswer']=dc['logAnswer']+ "  RT:"    + RT
+        dc['logAnswer']=dc['logAnswer']+ "  DELAY:" + str(delay) + "\n"
+        #print(dc['logAnswer'])
         saveLog()   # Call save function
     print("\n#### NOTE = Test has ended!!")
 
@@ -222,10 +222,10 @@ def mainLoop():
 # Function save logfile and mkdir if needed
 def saveLog():
     print("---Saving trial log.....")   
-    if not os.path.exists(mydict['logpath']):
-	os.makedirs(mydict['logpath'])
-    with open(mydict['logpath']+"Som_"+mydict['logfileID']+".txt",'aw') as log_file:
-        log_file.write(mydict['logAnswer'])  # Save every trial as text line
+    if not os.path.exists(dc['logpath']):
+	os.makedirs(dc['logpath'])
+    with open(dc['logpath']+"Som_"+dc['logfileID']+".txt",'aw') as log_file:
+        log_file.write(dc['logAnswer'])  # Save every trial as text line
 
 
 # Some parameters that specify how we draw things onto our window
@@ -287,6 +287,7 @@ root.bind('<Return>', clickStart)
 root.bind('<Left>'  , clickYes)
 root.bind('<Right>' , clickNo)
 
+os.system("clear")
 
 ananda.load() # Load the ananda process
 print("\nRobot successfully loaded...")
