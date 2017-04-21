@@ -18,7 +18,7 @@ dc = {}              # dictionary for important param
 stages  = 0          # to enter clickStart soubroutine step-by-step
 answerflag = 0       # Flag=1 means subject has responded
 targetdist = 0.15    # move 15 cm from the center position (default!)
-waittime = 1.0       # 1500 msec general wait/delay time 
+waittime = 1.5       # 1500 msec general wait/delay time 
 
 dc['post'] = 0 # (0: hand moving to start-not ready, 
 #                     1: hand within/in the start position,
@@ -46,9 +46,9 @@ def playAudio():
 
 # This function obtains+saves a new OR loads existing center position
 def getCenter():
-    print("---Getting center position. Remain still!")
+    print("---Getting center position. PLEASE remain still!")
     # Required to have subject name!
-    if (os.path.isfile(dc['logpath']+subjid.get()+"_center.txt")):
+    if os.path.isfile(dc['logpath']+subjid.get()+"_center.txt"):
         #txt = open(mypwd + "/data/and_center.txt", "r").readlines()
         center = [[float(v) for v in txt.split(",")] for txt in open(
                       dc['logpath']+subjid.get()+"_center.txt", "r").readlines()]
@@ -76,7 +76,7 @@ def goToCenter(speed):
     while not ananda.status:   # check if movement is done
         ananda.status = ananda.move_is_done()
         time.sleep(0.07)
-    print("  Movement completed!")
+    #print("  Movement completed!")
     # Put flag to 1, indicating robot handle @ center position
     dc['post'] = 1
 
@@ -84,17 +84,17 @@ def goToCenter(speed):
 # Start main program, taking "Enter" button as input-event
 def clickStart(event):
     global stages
-    if (stages == 0):
+    if stages == 0:
         dc['logfileID'] = subjid.get()+filenum.get()
         dc['logpath'] = mypwd + "/data/" + subjid.get() + "_data/"
 
-        if not(subjid.get()) or not(filenum.get()):
+        if not subjid.get() or not filenum.get():
             print("##Error## Subject ID and/or file numbers are empty!")
         # Added check to ensure existing logfile isn't overwritten
-        elif (os.path.exists(dc['logpath']+"motorLog_"+dc['logfileID']+".txt")):
-            print "Duplicate: "+dc['logpath']+"motorLog_"+dc['logfileID']+".txt" 
+        elif os.path.exists("%smotorLog_%s.txt"%(dc['logpath'],dc['logfileID'])):
+            print "Duplicate: %smotorLog_%s.txt"%(dc['logpath'],dc['logfileID']) 
         else:
-            if (int(filenum.get()) == 0):
+            if int(filenum.get()) == 0:
                 filepath = mypwd+"/exper_design/practice.txt"
                 e3.config(state='normal')
                 e4.config(state='disabled')
@@ -106,19 +106,21 @@ def clickStart(event):
             stages = read_design_file(filepath) # Next stage depends if file can be loaded
             print "Press <Enter> or Quit-button to continue!\n"
     
-    elif (stages == 1):
+    elif stages == 1:
         e1.config(state='disabled')
         e2.config(state='disabled')
         getCenter()
-        goToCenter(2)
+        goToCenter(1.8)
         print "Press <Enter> or Quit-button to continue!\n"
         stages = 2
 
-    elif (stages == 2):
-        if (int(filenum.get()) == 0):
-            mainLoop() # This is only for filenum = 0, familiarization trials!      	
+    elif stages == 2:
+        if int(filenum.get()) == 0:
+            print("Entering Practice Loop now.........")
+            mainLoop() # This is only for filenum = 0, familiarization trials!
         else:
-            mainLoop() # Once set, we're ready for the main loop (actual test!)
+            print("Entering Main Loop now.........")
+            mainLoop()	   # Once set, we're ready for the main loop (actual test!)
     else:
         print("Current clickStart() stage = %d"%stages)
 
@@ -155,48 +157,34 @@ def mainLoop():
    
     # As the 1st element contains non-trial related setting, we remove it!
     for xxx in dc['mydesign']['trials']:
-        index   = xxx['trial']
-        FFset   = xxx['FField']
-        angle   = xxx['angle']
-        Feedback= xxx['feedback']
-        Score   = xxx['scoreOn']
-        Cursor  = xxx['cursorOn']
-        bias = [xxx["minbias"], xxx["maxbias"]]
-
+        index  = xxx['trial']
+    	FFset  = xxx['FField']
+    	angle  = xxx['angle']
+    	fdback = xxx['feedback']
+    	cursor = xxx['cursorOn']
+    	bias   = [xxx["minbias"], xxx["maxbias"]]
         print("\nNew Round- " + str(index))
-        win.itemconfig("start", fill="white")  # Make start circle white again
+        # Ref direction= If straight-ahead is defined as 90 degree
+        angle = angle - 90
 
-    	# Release robot_stay() to allow movement...
+    	# Release robot_stay() to allow movement
     	ananda.controller(0)
         time.sleep(waittime)
-        to_target(angle, bias)  # <<<<<
-
-        time.sleep(waittime)
-        dc['post'] = 0    # Reset position!
-        goToCenter(1.5)   # Go back to center!
+        to_target(angle)   # <<<<< Jump to child loop...
+        win.itemconfig("start", fill="white")  # Make start circle white again
+        checkEndpoint(angle,fdback,bias)
+        dc['post'] = 0   # Reset position!
+        goToCenter(1.25)  # Go back to center!
         time.sleep(0.3)
-
-	print(dc['logAnswer'])
-        saveLog()   # Call save function
+        saveLog()   	 # Call this function to save logfile
     print("\n#### NOTE = Test has ended!!")
 
 
-# Function save logfile and mkdir if needed
-def saveLog():
-    print("---Saving trial log.....")   
-    if not os.path.exists(dc['logpath']):
-	os.makedirs(dc['logpath'])
-    with open(dc['logpath']+"motorLog_"+dc['logfileID']+".txt",'aw') as log_file:
-        log_file.write(dc['logAnswer'])  # Save every trial as text line
-
-
-
 # This handles the whole segment when subject moves to hidden target
-def to_target(angle, bias):
+def to_target(angle):
     notcompleted = 1
     dc['post'] = 1;  dc['subjx']= 0;  dc['subjy']= 0
-    # Ref direction= If straight-ahead is defined as 90 degree
-    angle = angle - 90
+
     try:
 	win.delete("target")
     except:
@@ -224,27 +212,66 @@ def to_target(angle, bias):
 
         # Occasionally you call update() to refresh the canvas....
         samsung.update()
-        time.sleep(0.005)
-
+        time.sleep(0.04)  # Refresh rate? 40 msec
         vx, vy = ananda.rshm('fsoft_xvel'), ananda.rshm('fsoft_yvel')
-        #print(dc['post'])
+        print(dc['post'])
         #print(math.sqrt(vx**2+vy**2))
  
-        if (dc['subjd'] < 0.01) & (dc['post'] == 1) & (math.sqrt(vx**2+vy**2) < 0.01):
+        if dc['subjd'] < 0.01 and dc['post'] == 1 and math.sqrt(vx**2+vy**2) < 0.01:
             # Check: hand is stationary within the start position? Green is the go signal!
             win.itemconfig("start", fill="green")
             dc['post'] = 2
-        elif (dc['subjd']> 0.01) & (dc['post'] == 2):
+        elif dc['subjd']> 0.01 and dc['post'] == 2:
             # Check: hand is leaving start position outward?
             start_time = time.time()  # Used for computing movement speed
             dc['post'] = 3
-        elif (dc['subjd'] > 0.12) & (dc['post'] == 3) & (math.sqrt(vx**2+vy**2) < 0.01):
+        elif dc['subjd'] > 0.12 and dc['post'] == 3 and math.sqrt(vx**2+vy**2) < 0.01:
             # Check: hand has reached target and now stationary?
             ananda.stay()
+            time.sleep(0.01)
             myspeed = 1000*(time.time() - start_time)
             print("  Movement duration = %.1f msec"%(myspeed))
-            checkEndpoint(angle,bias[0],bias[1])
             notcompleted = 0
+
+
+def checkEndpoint(angle, feedback, bias):
+    print("  Checking end-position inside target zone?")
+    # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
+    inrad = -angle*math.pi/180
+    pivot = complex(dc['center'][0],dc['center'][1])   # In robot coordinate...
+    tx,ty = dc['subjx'], dc['subjy']
+    rot  = complex(math.cos(inrad),math.sin(inrad))
+    trot = rot * (complex(tx, ty) - pivot) + pivot
+    print trot
+    PDy  = trot.real-dc['center'][0]
+    print "  Lateral deviation = %f" %PDy
+
+    # Check the condition to display explosion when required!
+    if PDy > bias[0] and PDy < bias[1]:
+        status = 1  # 1: rewarded, 0: failed
+        dc['scores'] = dc['scores'] + 10
+        print "  Explosion delivered! Current score: %d"%(dc['scores'])
+        if (feedback):
+            showImage("Explosion_final.gif",960,140) 
+            time.sleep(0.05)  
+            showImage("score" + str(dc['scores']) + ".gif",965,260)
+        status = 1 if feedback else 0 
+    else: 
+        time.sleep(waittime)
+	status = 0
+
+    # This is where I save logfile content!
+    dc['logAnswer'] = "%.3f %d %d %.3f %.3f %.3f %.3f\n"%(PDy,angle,status,tx,ty,tx-dc['center'][0],ty-dc['center'][1])
+
+
+
+# Function save logfile and mkdir if needed
+def saveLog():
+    print("---Saving trial log.....")   
+    if not os.path.exists(dc['logpath']):
+	os.makedirs(dc['logpath'])
+    with open("%smotorLog_%s.txt"%(dc['logpath'],dc['logfileID']),'aw') as log_file:
+        log_file.write(dc['logAnswer'])  # Save every trial as text line
 
 
 
@@ -259,7 +286,7 @@ w, h  = 1920,1080
 cursor_size  = 0.007  #  7 mm start radius
 target_thick = 0.008  # 16 cm target thickness
 
-master.geometry('%dx%d+%d+%d' % (450, 150, 500, 200))   # Nice geometry setting!!
+master.geometry('%dx%d+%d+%d' % (400, 150, 500, 200))   # Nice geometry setting!!
 master.title("Somatic Working Memory Test")
 master.protocol("WM_DELETE_WINDOW", quit)
 
@@ -315,15 +342,15 @@ def mainGUI():
     Label(topFrame, text="Experiment Design File: ").grid(row=2, sticky=E)
     e4 = OptionMenu(topFrame, varopt, "motor_test", "training", "passive")
     e4.grid(row=2, column=1, columnspan=3, sticky=W, pady=5)
-    varopt.set("notor_test") # default value
+    varopt.set("motor_test") # default value
     
     # Entry widget for 4th row --------------
     Label(topFrame, textvariable=mymsg).grid(row=2, sticky=E)
     
     # Create buttons ---------------
-    myButton1 = Button(bottomFrame, text="START", command=clickStart)
+    myButton1 = Button(bottomFrame, text="START", bg="#0FAF0F", command=clickStart)
     myButton1.grid(row=0, padx = 15)
-    myButton2 = Button(bottomFrame, text="Quit!", command=quit)
+    myButton2 = Button(bottomFrame, text=" QUIT ", bg="#AF0F0F", command=quit)
     myButton2.grid(row=0, column=2, padx = 15, pady = 5)
 
 
@@ -333,7 +360,7 @@ def mainGUI():
 def robot_canvas():
     # Indicate the canvas as global so I can access it from outside....
     global win
-    win = Canvas(samsung, width=w, height=h)
+    win = Canvas(samsung, width=w, height=h) # 'win' is a canvas on Samsung()
     win.pack()
     win.create_rectangle(0, 0, w, h, fill="black")
 
@@ -407,37 +434,11 @@ def showTarget(angle, color="white"):
     trot = rot * (complex(tx,ty) - pivot) + pivot
     dc['target.ctr'] = [trot.real, trot.imag]
     win.create_oval( trot.real, trot.imag,trot.real+2, trot.imag+2, width=5 )
-
-    
-def checkEndpoint(angle, minbias, maxbias):
-    print("  Checking end-position inside target zone?")
-    # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
-    inrad = -angle*math.pi/180
-    pivot = complex(dc['center'][0],dc['center'][1])   # In robot coordinate...
-    tx,ty = dc['subjx'], dc['subjy']
-    rot  = complex(math.cos(inrad),math.sin(inrad))
-    trot = rot * (complex(tx, ty) - pivot) + pivot
-    PDy  = trot.real-dc['center'][0]
-    print "  Lateral deviation = %f" %PDy
-
-    # Check the condition to display explosion when required!
-    if (PDy > minbias) & (PDy < maxbias):
-        status = 1  # 1: rewarded, 0: failed
-        dc['scores'] = dc['scores'] + 10
-        print "  Explosion delivered! Current score: %d"%(dc['scores'])
-        showImage("/pictures/score" + str(dc['scores']) + ".gif")
-        showImage("/pictures/Explosion_final.gif")  
-    else: 
-        status = 0
-
-    # Preparing logfile content....
-    dc['logAnswer'] = str(PDy) + " " + str(angle+90) + " " + str(status) + " " + str(tx) + " " + str(ty) + "\n"
-
-    
+  
 
 def showImage(name, px=w/2, py=h/2):
     #print "  Showing image on the canvas...."
-    myImage = PhotoImage(file=mypwd + name)
+    myImage = PhotoImage(file=mypwd + "/pictures/" +name)
     # Put a reference to image since TkImage doesn't handle image properly, image
     # won't show up! So first, I put image in a label.
     label = Label(win, bg="black", image=myImage)
@@ -445,7 +446,7 @@ def showImage(name, px=w/2, py=h/2):
     label.place(x=px, y=py)
     # Occasionally you call update() to refresh the canvas....
     samsung.update()
-    time.sleep(1)
+    time.sleep(0.75)
     label.config(image='')   
     # Occasionally you call update() to refresh the canvas....
     samsung.update()
@@ -475,7 +476,7 @@ while keep_going:
     #routine_checks()
     master.update_idletasks()
     master.update()
-    time.sleep(0.01) # 10 msec frame-rate of GUI update
+    time.sleep(0.04) # 40 msec frame-rate of GUI update
 
 
 

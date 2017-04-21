@@ -19,17 +19,20 @@ dc= {}                # dictionary for important param
 stages  = 0           # to enter clickStart soubroutine step-by-step
 answerflag = 0        # Flag=1 means subject has responded
 targetdist = 0.15     # move 15 cm from the center position
-targethold = 0.9      # 900 msec delay at the target point
+targethold = 0.5      # 500 msec delay at the target point
 movetime = 0.9	      # 900 msec default movement speed to a target
 mypwd   = os.getcwd() # retrieve code current directory
+txtmsg  = ""
 
 
 ####### Create various functions using 'def' keyword
 # Subroutine to EXIT the program and stop everything.
 def quit():
-    master.destroy()
     global keep_going
     keep_going = False
+    time.sleep(0.2)
+    #master.destroy()
+    samsung.destroy()
     ananda.unload()  # Close/kill robot process
 
 
@@ -44,9 +47,9 @@ def playAudio():
 
 # This function obtains+saves a new OR loads existing center position
 def getCenter():
-    print("---Getting center position. Remain still!")
+    print "---Getting center position. PLEASE remain still!"
     # Required to have subject name!
-    if (os.path.isfile(dc['logpath']+subjid.get()+"_center.txt")):
+    if os.path.isfile(dc['logpath']+subjid.get()+"_center.txt"):
         #txt = open(mypwd + "/data/and_center.txt", "r").readlines()
         center = [[float(v) for v in txt.split(",")] for txt in open(
                       dc['logpath']+subjid.get()+"_center.txt", "r").readlines()]
@@ -78,15 +81,13 @@ def goToCenter(speed):
 # Start main program, taking "Enter" button as input-event
 def clickStart(event):
     global stages
-    if (stages == 0):
+
+    if stages == 0:
         dc['logfileID'] = subjid.get()+filenum.get()
         dc['logpath'] = mypwd+"/data/"+subjid.get()+"_data/"
 
-        if not(subjid.get()) or not(filenum.get()):
+        if not subjid.get() or not filenum.get():
              print("##Error## Subject ID and/or file numbers are empty!")
-        # Added check to ensure existing logfile isn't overwritten
-        elif (os.path.exists(dc['logpath']+"Som_"+dc['logfileID']+".txt")):
-             print "Duplicate: "+dc['logpath']+"Som_"+dc['logfileID']+".txt" 
         else:
              print "---Loading for block %s, subject %s..." %(filenum.get(),subjid.get())
              filepath = mypwd+"/exper_design/"+dc['logfileID']+".txt"             
@@ -94,19 +95,35 @@ def clickStart(event):
              stages = read_design_file(filepath)   # Next stage depends if file loaded successfully
              print "Press <Enter> or Quit-button to continue!\n"
 
-    elif (stages == 1):
+    elif stages == 1:
+        chk.config(state='disabled')
         e1.config(state='disabled')
         e2.config(state='disabled')
         getCenter()
         goToCenter(3)
         print "Press <Enter> or Quit-button to continue!\n"
+        # Added check to ensure existing logfile isn't overwritten
+        wmtest="Som_" if somatic.get() else "Vis_"
+        if os.path.exists("%s%s_%s.txt"%(dc['logpath'],wmtest,dc['logfileID'])):
+             print "Duplicate: %s%s_%s.txt"%(dc['logpath'],wmtest,dc['logfileID']) 
         stages = 2
 
-    elif (stages == 2):
-        if (int(filenum.get()) == 0):
-            practiceLoop() # This is only for filenum = 0, familiarization trials!      	
+    elif stages == 2:
+        if somatic.get(): mymsg.set("Note: This is Somatic WM Test (default)") 
+        else: mymsg.set("Note = This is Visuospatial WM Test .....")
+        master.update()
+        # Using tag, update 'canvas' color depending on the type of test!
+        #mybg="black" if somatic.get() else mybg="white"
+        #win.itemconfig("canvas", fill=mybg)
+
+        if int(filenum.get()) == 0:
+            # This is only for filenum = 0, familiarization trials!
+            print("Entering Practice Loop now.........")
+            mainLoop(1)    
         else:
-            mainLoop()     # Once set, we're ready for the main loop (actual test!)
+	    # Once set, we're ready for the main loop (actual test!)
+            print("Entering Main Loop now.........")
+            mainLoop(0)	   
     else:
         print("Current clickStart() stage = %d"%stages)
 
@@ -133,8 +150,7 @@ def doAnswer(index):
         master.update()
         time.sleep(0.3)
     RT = 1000*(time.time() - start_time)  # RT in m-sec
-    RT = "%d"%RT
-    print("---Trial-"+str(index)+"   ANSWER:"+str(dc['answer'])+"   RT:"+RT)
+    print "---Trial-%d   ANSWER:%d    RT:%d"%(index,dc['answer'],RT)
     answerflag = 0
     return(RT)
 
@@ -165,58 +181,85 @@ def angle_pos(theta):
     print("  Movement completed!")
 
 
-# Moving to target: It takes a list of anchor/probe direction as input
-def to_target(directions):
-    if (type(directions)==list):
-        # If this is a list, it means a set of anchors
-        for direction in directions:
-            print("Anchor direction: " + str(direction))
-            angle_pos(direction)
-            time.sleep(targethold)
-            goToCenter(1)  # Go back to centre!
-            time.sleep(targethold)
-            dc['logAnswer'] = dc['logAnswer'] + " " + str(direction)
-    else:
-        # Else, it means just a test direction or probe!
-        print("Probe direction: " + str(directions))
-        angle_pos(directions)
-        time.sleep(targethold)
-        goToCenter(1)  # Go back to centre!
-        dc['logAnswer'] = dc['logAnswer'] + " " + str(directions)
+# Convert angle direction to coordinates w.r.t center position
+def visual_pos(theta):
+    theta_rad = theta*math.pi/180 # convert to radian
+    targetX = targetdist * math.cos(theta_rad) + dc['center'][0]
+    targetY = targetdist * math.sin(theta_rad) + dc['center'][1]
+    showStart(targetX,targetY)
+    time.sleep(0.07)
 
 
-# Run only for the first time: familiarization trials with instruction.
-def practiceLoop():
-    print("Entering practice-Loop now.........")
-    #playAudio()
-    #playAudio()
-    #playAudio()
+# Showing visual stimulus on the LCD screen coordinate, for 'targethold' msec
+def showStart(x,y,color="white"):
+    print("  Showing stimulus at %f, %f"%(x,y))
+    minx, miny = rob_to_screen(x - 0.008, y - 0.008)
+    maxx, maxy = rob_to_screen(x + 0.008, y + 0.008)
+    # Draw start circle. NOTE: Use 'tag' as an identity of a canvas object!
+    win.create_oval( minx,miny,maxx,maxy, fill=color, tag="start" )
+    samsung.update()
+    time.sleep(targethold)
+    time.sleep(targethold)
+    win.delete("start")
+    samsung.update()
+    print("  Presentation completed!")
 
 
 # The main code once 'Start' or <Enter> key is pressed
-def mainLoop():
-    print("Entering main-Loop now.........")
-    #playAudio()
-    #print(ananda.status())
+def mainLoop(practice_flag):
+    
+    if practice_flag: print "Familiarization Step-1"
+
     for xxx in dc['mydesign']:
         index  = xxx['trial']
         anchors= xxx['anchors']
         probe  = xxx['probe']
         delay  = xxx['delay']
+
         print("\nNew Round- " + str(index))
+        showImage("newround.gif")
         time.sleep(targethold)
-        dc['logAnswer'] = str(index) + " "   # string to be saved later!
-        to_target(anchors)
-        print("  Waiting for " + str(delay) + "msec")
+        dc['log'] = str(index) + " "   # string to be saved later!
+
+	to_target(anchors)    # <<<<<<
+
+        print ("  Waiting for %d msec"%(delay))
+        if practice_flag: print "Familiarization Step-2" 
         time.sleep(delay/1000)
-        to_target(probe)
+
+	to_target(probe)      # <<<<<<
+
         RT = doAnswer(index)
-        dc['logAnswer']=dc['logAnswer']+ "  ANSWER:"+ str(dc['answer'])
-        dc['logAnswer']=dc['logAnswer']+ "  RT:"    + RT
-        dc['logAnswer']=dc['logAnswer']+ "  DELAY:" + str(delay) + "\n"
-        #print(dc['logAnswer'])
+        dc['log']=dc['log']+"  ANSWER:%d  RT:%d  DELAY:%d\n"%(dc['answer'],RT,delay)
+
+        if practice_flag: print "Familiarization Step-3" 
+        #print(dc['log'])
         saveLog()   # Call save function
+
     print("\n#### NOTE = Test has ended!!")
+
+
+# Moving to target: It takes a list of anchor/probe direction as input
+def to_target(directions):
+    if type(directions)==list:
+        # If this is a list, it means a set of anchors
+        for direction in directions:
+            print("Anchor direction: " + str(direction))
+            angle_pos(direction) if somatic.get() else visual_pos(direction)
+            time.sleep(targethold)
+            #goToCenter(1) if somatic.get() else pass  # Go back to centre!
+            time.sleep(targethold)
+            dc['log'] = dc['log'] + " " + str(direction)
+    	    # Occasionally call update(). This allows us to press buttons while looping.
+            master.update()
+    else:
+        # Else, it means just a test direction or probe!
+        print("Probe direction: " + str(directions))
+	angle_pos(directions) if somatic.get() else visual_pos(directions)
+        time.sleep(targethold)
+        #goToCenter(1) if somatic.get() else pass  # Go back to centre!
+        dc['log'] = dc['log'] + " " + str(directions)
+
 
 
 # Function save logfile and mkdir if needed
@@ -224,15 +267,12 @@ def saveLog():
     print("---Saving trial log.....")   
     if not os.path.exists(dc['logpath']):
 	os.makedirs(dc['logpath'])
-    with open(dc['logpath']+"Som_"+dc['logfileID']+".txt",'aw') as log_file:
-        log_file.write(dc['logAnswer'])  # Save every trial as text line
+    wmtest="Som_" if somatic.get() else "Vis_"
+    with open(dc['logpath']+wmtest+dc['logfileID']+".txt",'aw') as log_file:
+        log_file.write(dc['log'])  # Save every trial as text line
 
 
-# Some parameters that specify how we draw things onto our window
-w, h = 1920,1080
-robot_scale = 700
-cursor_size = 10
-target_size = 5
+######## Some parameters that specify how we draw things onto our GUI window
 
 from Tkinter import * # Importing the Tkinter library
 master  = Tk()	      # Create an empty background window for GUI
@@ -240,20 +280,33 @@ samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
                       # Interesting, you shouldn't have 2 Tk() instances, use Toplevel()
 	              # and this will solve the problem of pyimage not displayed
 
-master.geometry('%dx%d+%d+%d' % (370, 150, 500, 200))   # Nice geometry setting!!
-master.title("Somatic Working Memory Test")
+w, h = 1920,1080
+master.geometry('%dx%d+%d+%d' % (370, 170, 500, 200))   # Nice geometry setting!!
 master.protocol("WM_DELETE_WINDOW", quit)
 
 subjid  = StringVar()
 filenum = StringVar()
 mymsg   = StringVar()
+somatic = BooleanVar()
+
+# Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
+# we need to have a way to do the conversion so as to show the position properly.
+
+caldata = os.popen('./robot/ParseCalData robot/cal_data.txt').read()
+#print caldata.split("\t")
+coeff = caldata.split('\t')
+
+def rob_to_screen(robx, roby):
+    px = float(coeff[0]) + float(coeff[1])*robx + float(coeff[2])*robx*roby
+    py = float(coeff[3]) + float(coeff[4])*roby + float(coeff[5])*robx*roby
+    return (px,py)
 
 def mainGUI():
     # Create two different frames on the master -----
     topFrame = Frame(master, width=400, height=100)
     topFrame.pack(side=TOP, expand = 1)
     #frame.bind('<Left>', leftKey)
-    bottomFrame = Frame(master, bg="white", width=400, height=100)
+    bottomFrame = Frame(master, width=400, height=100)
     bottomFrame.pack(side=BOTTOM, expand = 1)
     
     # Important: This maintains frame size, no shrinking
@@ -262,38 +315,58 @@ def mainGUI():
     
     # Make Entry widgets global so that we can configure from outside    
     global e1, e2
-    
     # Entry widget for 1st row --------------
-    Label(topFrame, text="Subject ID: ").grid(row=0, sticky=E)
+    Label(topFrame, text="Subject ID: ").grid(row=0, sticky=E, pady=(13,20))
     e1 = Entry(topFrame, width = 6, bd =1, textvariable = subjid)
-    e1.grid(row=0, column=1)
+    e1.grid(row=0, column=1, pady=(13,20))
     e1.insert(END, "aes")
-    Label(topFrame, text="File Number: ").grid(row=0, column=3, padx = (30,5))
+    Label(topFrame, text="File Number: ").grid(row=0, column=3, padx = (30,5),  pady=(13,20))
     e2 = Entry(topFrame, width = 3, bd =1, textvariable = filenum)
-    e2.grid(row=0, column=4, pady=5)
+    e2.grid(row=0, column=4, pady=(13,20))
     e2.insert(END, "1")
 
     # Entry widget for 2nd row --------------
     msg = Entry(topFrame, width = 50, bd=0, textvariable=mymsg)
-    msg.grid(row=2, columnspan=10, pady=10)
+    msg.grid(row=2, columnspan=10)
     #msg.config(highlightbackground="red")
     mymsg.set("Enter subject ID, file #, then press <ENTER> key!")
 
+    # Check button --------------
+    global chk
+    chk = Checkbutton(bottomFrame, text="Somatic?", variable=somatic)
+    chk.grid(row=0, column=1, padx = 15)
+    somatic.set(1)
+
     # Create buttons ---------------
-    myButton1 = Button(bottomFrame, text="Yes!", command=clickYes)
+    myButton1 = Button(bottomFrame, text=" Yes! ", bg="#0FAF0F", command=clickYes)
     myButton1.grid(row=0, padx = 10)
-    myButton2 = Button(bottomFrame, text="No!", command=clickNo)
+    myButton2 = Button(bottomFrame, text=" No! ", bg="#AF0F0F", command=clickNo)
     myButton2.grid(row=0, column=2, padx = 10)
-    myButton3 = Button(bottomFrame, text="Quit", command=quit)
+    myButton3 = Button(bottomFrame, text="  QUIT  ", command=quit)
     myButton3.grid(row=1, column=1, padx = 10, pady = 5)
+    
 
 
 def robot_canvas():
     # Indicate the canvas as global so I can access it from outside....
     global win
-    win = Canvas(samsung, width=w, height=h)
+    win = Canvas(samsung, width=w, height=h)  # 'win' is a canvas on Samsung()
     win.pack()
-    win.create_rectangle(0, 0, w, h, fill="white")
+    win.create_rectangle(0, 0, w, h, fill="black", tag="canvas")
+
+def showImage(name, px=650, py=450):
+    #print "  Showing image on the canvas...."
+    myImage = PhotoImage(file=mypwd + "/pictures/" + name)
+    # Put a reference to image since TkImage doesn't handle image properly, image
+    # won't show up! So first, I put image in a label.
+    label = Label(win, bg="white", image=myImage)
+    label.image = myImage # keep a reference!
+    label.place(x=px, y=py)
+    time.sleep(1.25)
+    label.config(image='')   
+    # Occasionally you call update() to refresh the canvas....
+    samsung.update()
+    #print "  Removing inage from the canvas...."
 
 
 master.bind('<Return>', clickStart)
@@ -317,9 +390,9 @@ while keep_going:
     # Although it maintains a main loop, this routine blocks! Use update() instead...
     #master.mainloop()
     #routine_checks()
-
     master.update_idletasks()
     master.update()
+    master.title("-- Somatic WM Test --") if somatic.get() else master.title("Visuospatial WM Test")
     time.sleep(0.1) # frame rate of our GUI update
 
 
