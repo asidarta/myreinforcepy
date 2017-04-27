@@ -7,10 +7,11 @@ as the "my_ffnew.tcl" code in Tcl for the old suzuki machine.
 
 Revisions: Confirming the new code works like the old Tcl code (Apr 19) 
            Major cleanup with Floris' comments on the code (Apr 21)
+           Adding a feature to replay the trajectory while the subject remains passive (Apr 24)
 """
 
-import robot.interface as ananda
-from numpy import *
+import robot.interface as robot
+import numpy as np
 import os.path
 import time
 import json
@@ -19,16 +20,23 @@ import math
 
 # Global definition of variables
 dc = {}              # dictionary for important param
-mypwd = os.getcwd()  # retrieve code current directory
+mypwd  = os.getcwd() # retrieve code current directory
+w, h   = 1920,1080   # Samsung LCD size
+traj   = []          # global var to contain recorded trajectory
+record = False       # flag indicating a specific trial for capturing + replaying
 
 # Global definition of constants
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
-TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
+TARGETDIST  = 0.10   # move 15 cm from the center position (default!)     :::TODO::: CHANGE BACK TO 0.15
 TARGETTHICK = 0.008  # 16 cm target thickness
 CURSOR_SIZE = 0.009  #  9 mm start radius
 WAITTIME    = 1.0    # 1000 msec general wait or delay time 
 MOVE_SPEED  = 1.8    # duration (in sec) of the robot moving the subject to the center
-w, h  = 1920,1080
+
+# how big a window to use for smoothing (see tools/smoothing for details about the effects)
+SMOOTHING_WINDOW_SIZE = 9 
+SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
+
 
 
 ##phase
@@ -48,7 +56,7 @@ def quit():
     keep_going = False
     reach_target = False
     master.destroy()
-    ananda.unload()  # Close/kill robot process
+    robot.unload()  # Close/kill robot process
 
 
 def playAudio():
@@ -73,7 +81,7 @@ def getCenter():
         dc['cx'],dc['cy'] = (center[0][0],center[0][1])
     else:
         print("This is a new subject. Center position saved.")
-        dc['cx'], dc['cy'] = ananda.rshm('x'),ananda.rshm('y')
+        dc['cx'], dc['cy'] = robot.rshm('x'),robot.rshm('y')
         txt_file = open(dc['logpath']+subjid.get()+"_center.txt", "w")
         txt_file.write("%f,%f"%(dc['cx'],dc['cy']))
         txt_file.close()
@@ -84,12 +92,12 @@ def getCenter():
 def goToCenter(speed):
     """ Move to the center or start position and stay there"""
     # Ensure this is a null field first (because we will be updating the position)
-    ananda.controller(0)
+    robot.controller(0)
     print("  Now moving to center: %f,%f"%(dc['cx'],dc['cy']))
     # Send command to move to cx,cy
-    ananda.move_stay(dc['cx'],dc['cy'],speed)
+    robot.move_stay(dc['cx'],dc['cy'],speed)
     
-    #while not ananda.move_is_done(): pass
+    #while not robot.move_is_done(): pass
     #print("  Movement completed!")
     # Put flag to 1, indicating robot handle @ center position
     dc['post'] = 1
@@ -181,6 +189,8 @@ def runBlock():
     """ The main code once 'Start' or <Enter> key is pressed """
     minvel, maxvel = dc['mydesign']['settings']["velmin"], dc['mydesign']['settings']["velmax"]
 
+    global traj
+
     for xxx in dc['mydesign']['trials']:
         # For running one trial of the block....
         index  = xxx['trial']
@@ -193,32 +203,50 @@ def runBlock():
 
         # (1) Signal that the subject can start moving and wait until reaches the target
         time.sleep(WAITTIME)
+
+        # Note: To *fade out* the forces instead of releasing all of a sudden
+        robot.stay_fade(dc['cx'],dc['cy'])
+
         to_target(angle)   
         win.itemconfig("start", fill="white")  # Make start circle white again
         
         # (2) Once reached, check end-point accuracy
         checkEndpoint(angle, fdback, bias)
         
-        # (3) Reset position flag. Go back to center!
+        # (3) Reset position flag. Go back to center. Note: If the next trial is a replay,
+        # it should go instead to the first position recorded.
         dc['post'] = 0    
-        goToCenter(1.25) 
+        #goToCenter(MOVE_SPEED)
+
+        firstx,firsty = traj[0]
+        print("\nMoving to starting point %f,%f\n"%(firstx,firsty))
+        #print traj[50]
+        #print traj[100]
+        robot.move_stay(firstx, firsty, MOVE_SPEED)
+ 
         # (4) Call this function to save logfile
         time.sleep(0.3)
-        saveLog()   	 
+        #saveLog()   	 
+
+        # (5) Maybe this is the point to replay the trajectory
+        showImage("test_trial.gif",700,150,2)
+        time.sleep(0.5)
+        replay_traj()
 
     print("\n#### NOTE = Test has ended!!")
 
 
 def to_target(angle):
     """ This handles the whole segment when subject moves to hidden target """
-    reach_target = 1
+    global traj
     dc['post'] = 1;  dc['subjx']= 0;  dc['subjy']= 0
     win.itemconfig("start",fill="white") 
+    reach_target = False
 
-    while reach_target: # while the subject has not reached the target
+    while not reach_target: # while the subject has not reached the target
         
         # First read out current x,y robot position
-        x,y = ananda.rshm('x'),ananda.rshm('y')
+        x,y = robot.rshm('x'),robot.rshm('y')
         dc['subjx'], dc['subjy'] = x, y
 
     	# Compute current distance from the center/start--robot coordinate! 
@@ -232,48 +260,186 @@ def to_target(angle):
 
         # Occasionally you call update() to refresh the canvas....
         samsung.update()
-        vx, vy = ananda.rshm('fsoft_xvel'), ananda.rshm('fsoft_yvel')
+        vx, vy = robot.rshm('fsoft_xvel'), robot.rshm('fsoft_yvel')
         vtot = math.sqrt(vx**2+vy**2)
-        #print(math.sqrt(vx**2+vy**2))
+        #print vtot
         #print(dc['post'])
 
     	# Release robot_stay() to allow movement in principle, but we haven't given 
         # subjects the signal yet that they can start moving.
-        #ananda.controller(0)
+        #robot.controller(0)
 
-        if dc["post"]==1: # If the hand was towards the center (start)
-            # Check if the subject is holding still in the start position
+        # (1) When the hand was towards the center (start), check if the subject is holding 
+        # still inside the start position.
+        if dc["post"]==1:  
             if dc["subjd"]< 0.01 and vtot < 0.01:
-                # Note: To *fade out* the forces instead of releasing all of a sudden
-                ananda.stay_fade(dc['cx'],dc['cy'])
+                time.sleep(0.5)
                 dc["post"]=2                
                 win.itemconfig("start", fill="green")
+		## TODO: Handle movements which are too long
+                traj = robot.start_capture()   # start CAPTURING trajectory...
 
-        elif dc["post"]==2: # If the hand has more or less stationary in the start position
-            # Check if the subject has left the starting position...
+        # (2) If more or less stationary in the start position, check if the subject has left
+        # the starting position. Timer to compute movement speed begins. 
+        elif dc["post"]==2:
             if dc["subjd"] > 0.01:
                 start_time = time.time()  # Used for computing movement speed
                 dc["post"]=3
 
-        elif dc["post"]==3: # If the subject has reached the the target
-            # Check if the subject has moved sufficiently AND is coming to a stop
-            if dc["subjd"] > 0.12 and vtot < 0.01:
+        # (3) If the subject has reached the the target, check if the subject has moved 
+        # sufficiently far AND is coming to a stop. If yes, compute movement speed and 
+        # retrieve + filter the raw trajectory.       
+        elif dc["post"]==3:
+            if dc["subjd"] > 0.75*TARGETDIST and vtot < 0.01:
+                robot.stay()
                 time.sleep(0.05)
                 myspeed = 1000*(time.time() - start_time)
                 print("  Movement duration = %.1f msec"%(myspeed))
-                ananda.stay()
-                reach_target = False
+                reach_target = True
+                filter_traj()
+                
+ 
+
+def replay_traj():
+    # Push the clean trajectory back to the robot memory for replaying (and set 
+    # the final positions appropriately)
+    #robot.prepare_replay(traj) 
+
+    print("Ready to start replaying trajectory...")
+    #raw_input("Press <ENTER> to start")
+    #time.sleep(0.5)
+    #robot.start_replay()
+
+    #while not robot.replay_is_done():
+    #    master.update()
+    #    pass
+
+    print("Finished replaying the trajectory...")
+            
+    # Important: Don't forget to go back to the center position again!
+    #time.sleep(WAITTIME)
+    #firstx,firsty = traj[0]
+    #print("\nMoving to starting point %f,%f\n"%(firstx,firsty))
+    #robot.move_stay(firstx, firsty, MOVE_SPEED)
+
+    #time.sleep(WAITTIME)
+    print("Rotating the trajectory...")
+    traj_rot = rotate(traj, (dc['cx'],dc['cy']), 5)
+    print traj_rot 
+
+    robot.prepare_replay(traj_rot)
+    
+
+    print("Ready to start replaying trajectory...")
+    #raw_input("Press <ENTER> to start")
+    #time.sleep(0.5)
+    #robot.start_replay()
+
+    #while not robot.replay_is_done():
+    #    master.update()
+    #    pass
+
+    #print("Finished replaying the trajectory...")
+            
+    # Important: Don't forget to go back to the center position again!
+    #time.sleep(WAITTIME)
+    #goToCenter(MOVE_SPEED)
+
+
+
+
+
+def velocity_check(x,y):
+    """ This function tries to find the time point in which movement velocity reaches 
+    5% of the maximum velocity (velr). This is used to cut the trajectory"""
+
+    vel = []   # declare empty list
+    # obtain velocity for x and y separately
+    print("Calculating maximum velocity...")
+    vx,vy = np.gradient(x), np.gradient(y)
+    # then compute the resultant velocity vector: velr 
+    # Twist your mind with list comprehension!
+    velr = [math.sqrt(xx**2 + yy**2) for xx,yy in zip(vx,vy)]
+    #print velr
+    vel_lim = 0.05*max(velr)     
+    # try to only take > 5% of max. velocity
+    j = [i for i, trials in enumerate(velr) if trials > vel_lim]
+    #print min(j)
+    #print max(j)
+
+
+def filter_traj():
+    record = True
+    # retrieve the captured trajectory from the robot memory
+    print("Retrieving raw trajectory...")
+    raw_traj = list(robot.retrieve_trajectory()) 
+    robot.prepare_replay(raw_traj)
+    # separate them into x and y component
+    x,y = zip(*raw_traj)
+    #velocity_check(x,y)
+    # Smooth it
+    xfilt,yfilt = smooth(x),smooth(y)
+    global traj
+    traj = list(zip(xfilt,yfilt))
+
+
+def smooth_window(x,window):
+    """Smooth the data using a window with requested size  [From: Floris]
+    
+    This method is based on the convolution of a scaled window with the signal.
+    The signal is prepared by introducing reflected copies of the signal 
+    (with the window size) in both ends so that transient parts are minimized
+    in the begining and end part of the output signal.
+
+    Arguments
+        x: the input signal 
+        window: the window function (for example take numpy.hamming(21) ) 
+
+    output:
+        the smoothed signal
+        
+    original source:  http://scipy-cookbook.readthedocs.io/items/SignalSmooth.html 
+    adjusted by FVV to make Python3-compatible and ensure that the length of the output is the same
+    as the input.
+    """
+
+    wl = len(window)
+    if x.ndim != 1: raise ValueError( "smooth only accepts 1 dimension arrays.")
+    if x.size < wl: raise ValueError("Input vector needs to be bigger than window size.")
+    if wl<3: return x
+
+    # Pad the window at the beginning and end of the signal
+    s=np.r_[x[wl-1:0:-1],x,x[-2:-(wl+1):-1]]
+    # Length of s is len(x)+wl-1+wl-1 = len(x)+2*(wl-1)
+ 
+    ## Convolution in "valid" mode gives a vector of length len(s)-len(w)+1 assuming that len(s)>len(w) 
+    y=np.convolve(window/window.sum(),s,mode='valid')
+    
+    ## So now len(y) is len(s)-len(w)+1  = len(x)+2*(wl-1) - len(w)+1
+    ## i.e. len(y) = len(x)+len(w)-1
+    ## So we want to chop off len(w)-1 as symmetrically as possible
+    frontw = int((wl-1)/2)   # how much we want to chop off on the front
+    backw  = (wl-1)-frontw   # how much we want to chop off on the back
+    return y[frontw:-backw]
+
+
+def smooth(x):
+    """ Smooth the signal x using the specified smoothing window. """
+    return smooth_window(np.array(x),SMOOTHING_WINDOW)
+
+
 
 
 def checkEndpoint(angle, feedback, bias):
     print("  Checking end-position inside target zone?")
     # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
+    # TODO: Use the rotate function
     inrad = -angle*math.pi/180
     pivot = complex(dc['cx'],dc['cy'])   # In robot coordinates...
     tx,ty = dc['subjx'], dc['subjy']
     rot  = complex(math.cos(inrad),math.sin(inrad))
     trot = rot * (complex(tx, ty) - pivot) + pivot
-    print trot
+    #print trot
     PDy  = trot.real-dc['cx']
     print "  Lateral deviation = %f" %PDy
 
@@ -484,7 +650,7 @@ def rotate(coords, pivot, angle, rob_coord = True):
     	return tuple([ item for sublist in newxy  for item in sublist ])
 
 
-def showImage(name, px=w/2, py=h/2):
+def showImage(name, px=w/2, py=h/2, delay=1.0):
     #print "  Showing image on the canvas...."
     myImage = PhotoImage(file=mypwd + "/pictures/" +name)
     # Put a reference to image since TkImage doesn't handle image properly, image
@@ -494,7 +660,7 @@ def showImage(name, px=w/2, py=h/2):
     label.place(x=px, y=py)
     # Occasionally you call update() to refresh the canvas....
     samsung.update()
-    time.sleep(0.9)
+    time.sleep(delay)
     label.config(image='')   
     # Occasionally you call update() to refresh the canvas....
     samsung.update()
@@ -507,11 +673,13 @@ master.bind('<Return>', enterStart)
 
 os.system("clear")
 
-ananda.load() # Load the ananda process
+robot.load() # Load the robot process
 print("\nRobot successfully loaded...")
 
+robot.zeroft()
+
 print("---Now reading stiffness")
-ananda.rshm('plg_stiffness')
+robot.rshm('plg_stiffness')
 
 mainGUI()
 robot_canvas()

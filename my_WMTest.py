@@ -9,7 +9,7 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Major cleanup on the code (Apr 21)
 """
 
-import robot.interface as ananda
+import robot.interface as robot
 import os.path
 import time
 import json
@@ -43,7 +43,7 @@ def quit():
     keep_going = False
     reach_target = False
     master.destroy()
-    ananda.unload()  # Close/kill robot process
+    robot.unload()  # Close/kill robot process
 
 
 def playAudio():
@@ -68,7 +68,7 @@ def getCenter():
         dc['cx'],dc['cy'] = (center[0][0],center[0][1])
     else:
         print("This is a new subject. Center position saved.")
-        dc['cx'], dc['cy'] = ananda.rshm('x'),ananda.rshm('y')
+        dc['cx'], dc['cy'] = robot.rshm('x'),robot.rshm('y')
         txt_file = open(dc['logpath']+subjid.get()+"_center.txt", "w")
         txt_file.write("%f,%f"%(dc['cx'],dc['cy']))
         txt_file.close()
@@ -79,12 +79,12 @@ def getCenter():
 def goToCenter(speed):
     """ Move to the center or start position and stay there"""
     # Ensure this is a null field first (because we will be updating the position)
-    ananda.controller(0)
+    robot.controller(0)
     print("  Now moving to center: %f,%f"%(dc['cx'],dc['cy']))
     # Send command to move to cx,cy
-    ananda.move_stay(dc['cx'],dc['cy'],speed)
+    robot.move_stay(dc['cx'],dc['cy'],speed)
     
-    #while not ananda.move_is_done(): pass
+    #while not robot.move_is_done(): pass
     #print("  Movement completed!")
     # Put flag to 1, indicating robot handle @ center position
     dc['post'] = 1
@@ -186,10 +186,10 @@ def angle_pos(theta):
     targetX = TARGETDIST * math.cos(theta_rad) + dc['cx']
     targetY = TARGETDIST * math.sin(theta_rad) + dc['cy']
     print("  Moving to %f, %f"%(targetX,targetY))
-    ananda.move_stay(targetX, targetY, MOVE_SPEED)
-    #ananda.status = ananda.move_is_done()
-    #while not ananda.status:   # check if movement is done
-    #    ananda.status = ananda.move_is_done()
+    robot.move_stay(targetX, targetY, MOVE_SPEED)
+    #robot.status = robot.move_is_done()
+    #while not robot.status:   # check if movement is done
+    #    robot.status = robot.move_is_done()
         #time.sleep(0.07)
     print("  Movement completed!")
 
@@ -388,11 +388,11 @@ master.bind('<Right>' , clickNo)
 
 os.system("clear")
 
-ananda.load() # Load the ananda process
+robot.load() # Load the robot process
 print("\nRobot successfully loaded...")
 
 print("---Now reading stiffness")
-ananda.rshm('plg_stiffness')
+robot.rshm('plg_stiffness')
 
 mainGUI()
 robot_canvas()
