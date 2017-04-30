@@ -22,7 +22,7 @@ dc = {}              # dictionary for important param
 mypwd = os.getcwd()  # retrieve code current directory
 
 # Global definition of constants
-ANSWERFLAG  = 0      # Flag=1 means subject has responded
+ANSWERFLAG  = 0      # Flag = 1 means subject has responded
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
 TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
 TARGETTHICK = 0.008  # 16 cm target thickness

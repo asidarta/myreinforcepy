@@ -57,6 +57,7 @@ void static_ctl(u32);
 void static_ctl_fade(u32);
 void trajectory_capture(u32);
 void trajectory_reproduce(u32);
+void trajectory_capture_stayfade(u32);
 
 
 
@@ -74,7 +75,7 @@ init_slot_fns(void)
   ob->slot_fns[7] =  null_ctl;
   ob->slot_fns[8] =  trajectory_capture;
   ob->slot_fns[9] =  trajectory_reproduce;
-  ob->slot_fns[10] = null_ctl;
+  ob->slot_fns[10] = trajectory_capture_stayfade;
   ob->slot_fns[11] = null_ctl;
   ob->slot_fns[12] = null_ctl;
   ob->slot_fns[13] = null_ctl;
@@ -561,6 +562,57 @@ trajectory_reproduce(u32 id)
     fX= (-stiff*(X-traj_final_x) - damp*(vX));
     fY= (-stiff*(Y-traj_final_y) - damp*(vY));
   }
+#ifdef dyn_comp 
+  dynamics_compensation(fX,fY,3,1.0);
+# else
+  ob->motor_force.x = fX;
+  ob->motor_force.y = fY;
+#endif
+}
+
+
+
+
+
+void 
+trajectory_capture_stayfade(u32 id)
+{
+  /* 
+     This is the same as the static_ctl controller,
+     which keeps us at the given coordinates,
+     except that this fades the force gently,
+     using the multiplier fvv_force_fade that goes to
+     zero. 
+
+     At the same time, this captures the positions
+     so that we can later play them back.
+  */
+
+  // The capturing part
+  int traj_cnt = traj_count;// cast to unsigned just to be sure
+  if (traj_count<=TRAJECTORY_BUFFER_SIZE) {
+
+    // Capture the current position
+    trajx[traj_cnt] = X;
+    trajy[traj_cnt] = Y;
+      
+    ++traj_count;
+  }
+ 
+
+
+  // The staying-fading part
+  ob->fvv_force_fade *= 0.99; 
+  f64 fade  = ob->fvv_force_fade; // between 1 (full force) and 0 (no force)
+  //fade = fade*0.9;                // Exponentially decay force
+
+  f64 pcurx = ob->plg_p1x;
+  f64 pcury = ob->plg_p1y;
+  f64 stiff = ob->plg_stiffness;
+  f64 damp  = ob->plg_damping;
+
+  fX= fade* ((-stiff*(X-pcurx) - damp*(vX)));
+  fY= fade* ((-stiff*(Y-pcury) - damp*(vY)));
 #ifdef dyn_comp 
   dynamics_compensation(fX,fY,3,1.0);
 # else

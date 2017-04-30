@@ -16,6 +16,7 @@ import os.path
 import time
 import json
 import math
+import random
 
 
 # Global definition of variables
@@ -24,14 +25,17 @@ mypwd  = os.getcwd() # retrieve code current directory
 w, h   = 1920,1080   # Samsung LCD size
 traj   = []          # global var to contain recorded trajectory
 record = False       # flag indicating a specific trial for capturing + replaying
+nsince_last_test = 0 # this contains counter how many trials since the last test trial
 
 # Global definition of constants
+ANSWERFLAG  = 0      # Flag = 1 means subject has responded
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
 TARGETDIST  = 0.10   # move 15 cm from the center position (default!)     :::TODO::: CHANGE BACK TO 0.15
 TARGETTHICK = 0.008  # 16 cm target thickness
 CURSOR_SIZE = 0.009  #  9 mm start radius
-WAITTIME    = 1.0    # 1000 msec general wait or delay time 
-MOVE_SPEED  = 1.8    # duration (in sec) of the robot moving the subject to the center
+WAITTIME    = 0.75   # 750 msec general wait or delay time 
+MOVE_SPEED  = 1.5    # duration (in sec) of the robot moving the subject to the center
+FADEWAITTIME= 1.0
 
 # how big a window to use for smoothing (see tools/smoothing for details about the effects)
 SMOOTHING_WINDOW_SIZE = 9 
@@ -67,6 +71,31 @@ def playAudio():
     time.sleep(2)
     print("---Audio play finished...\n")
 
+
+
+def start_capture_and_fade(x,y):
+    """ This starts capturing the trajectory inside the robot and also stays at 
+    the current location, but gradually fades out the forces.
+    So this is a combination of stay_fade() and start_capture().
+    """
+
+    # Reset the capturing point
+    robot.wshm('traj_count',0) # define that we are starting from the starting point
+
+    # Staying-fading part
+    robot.wshm("fvv_force_fade",1.0) # This starts at 1.0 but exponentially decays to infinitely small
+    robot.wshm("plg_p1x",x)
+    robot.wshm("plg_p1y",y)
+    robot.wshm("plg_stiffness",robot.stiffness)
+    robot.wshm("plg_damping",robot.damping)
+
+    # Use the controller trajectory_capture_stayfade
+    robot.controller(10)        # trajectory_capture_stayfade
+    
+
+    
+
+    
 
 def getCenter():
     """To obtain and save a new center position OR load existing center position if exists"""
@@ -105,6 +134,19 @@ def goToCenter(speed):
 
 def clickStart():
     enterStart(True)
+
+def clickYes(event):
+    global ANSWERFLAG
+    print "Left key pressed to answer YES!"
+    dc['answer']=1
+    ANSWERFLAG = 1
+
+def clickNo(event):
+    global ANSWERFLAG
+    print "Right key pressed to answer NO!"
+    dc['answer']=0
+    ANSWERFLAG = 1
+
 
 def enterStart(event):
     """ Start main program, taking "Enter" button as input-event """
@@ -189,7 +231,7 @@ def runBlock():
     """ The main code once 'Start' or <Enter> key is pressed """
     minvel, maxvel = dc['mydesign']['settings']["velmin"], dc['mydesign']['settings']["velmax"]
 
-    global traj
+    global traj, nsince_last_test
 
     for xxx in dc['mydesign']['trials']:
         # For running one trial of the block....
@@ -201,39 +243,61 @@ def runBlock():
         print("\nNew Round- %i"%index)
         angle = angle - 90   # Reference: straight-ahead is defined as 90 deg
 
-        # (1) Signal that the subject can start moving and wait until reaches the target
-        time.sleep(WAITTIME)
-
+        # (1) Wait at center or home position first before giving the go-ahead signal.
+        time.sleep(0.5*WAITTIME)
         # Note: To *fade out* the forces instead of releasing all of a sudden
         robot.stay_fade(dc['cx'],dc['cy'])
+        time.sleep(FADEWAITTIME)
 
+        # This is the point where subject starts to move to the target....
         to_target(angle)   
         win.itemconfig("start", fill="white")  # Make start circle white again
         
         # (2) Once reached, check end-point accuracy
         checkEndpoint(angle, fdback, bias)
         
-        # (3) Reset position flag. Go back to center. Note: If the next trial is a replay,
-        # it should go instead to the first position recorded.
+        # (3) Reset position flag, ready to move back. Remove hand position cursor. 
         dc['post'] = 0    
-        #goToCenter(MOVE_SPEED)
+        win.coords("hand",*[0,0,0,0])
+        win.itemconfig("hand",fill="black")
+        win.coords("handbar",*[0,0,0,0])
+        win.itemconfig("handbar",fill="black")
+        # Occasionally you call update() to refresh the canvas....
+        samsung.update()
 
-        firstx,firsty = traj[0]
-        print("\nMoving to starting point %f,%f\n"%(firstx,firsty))
-        #print traj[50]
-        #print traj[100]
-        robot.move_stay(firstx, firsty, MOVE_SPEED)
+        # (4) Decide if the next trial is test trial to replay trajectory using
+        # a certain probability 
+        if random.random() < p_test(nsince_last_test):  # Why '<' ?
+            firstx,firsty = traj[0]
+            print("\nMoving to starting point %f, %f\n"%(firstx,firsty))
+            print traj[150]
+            print traj[210]
+            print traj[230]
+
+            # Note: If the next trial is a replay, it should go instead to 
+            # the first position recorded, not the center position.
+            robot.move_stay(firstx, firsty, MOVE_SPEED)
+            showImage("test_trial.gif",630,150,2)
  
-        # (4) Call this function to save logfile
-        time.sleep(0.3)
-        #saveLog()   	 
+            # (5) If this is test trial, now replay the trajectory. Flip coin 
+            # whether we replay the rotated or normal trajectory first...
+            time.sleep(0.5)
+            if random.random() < 0.5:           
+		replay_traj(False)
+            	replay_traj(True)
+            else:
+		replay_traj(True)
+            	replay_traj(False)
 
-        # (5) Maybe this is the point to replay the trajectory
-        showImage("test_trial.gif",700,150,2)
-        time.sleep(0.5)
-        replay_traj()
+            # (6) Wait for subject's response.
+            RT = doAnswer()
+            goToCenter(MOVE_SPEED*0.5)
+            nsince_last_test = 0
+        else:
+            goToCenter(MOVE_SPEED)
+            nsince_last_test = nsince_last_test + 1
 
-    print("\n#### NOTE = Test has ended!!")
+    print("\n#### NOTE = Test has ended! You may QUIT now.....")
 
 
 def to_target(angle):
@@ -269,18 +333,18 @@ def to_target(angle):
         # subjects the signal yet that they can start moving.
         #robot.controller(0)
 
-        # (1) When the hand was towards the center (start), check if the subject is holding 
-        # still inside the start position.
+        # (1) When the hand was towards the center (start), check if the subject is 
+        # holding still inside the start position.
         if dc["post"]==1:  
-            if dc["subjd"]< 0.01 and vtot < 0.01:
+            if dc["subjd"]< CURSOR_SIZE and vtot < 0.01:
                 time.sleep(0.5)
                 dc["post"]=2                
                 win.itemconfig("start", fill="green")
 		## TODO: Handle movements which are too long
                 traj = robot.start_capture()   # start CAPTURING trajectory...
 
-        # (2) If more or less stationary in the start position, check if the subject has left
-        # the starting position. Timer to compute movement speed begins. 
+        # (2) If more or less stationary in the start position, check if the subject has 
+        # left the start position. Timer to compute movement speed begins. 
         elif dc["post"]==2:
             if dc["subjd"] > 0.01:
                 start_time = time.time()  # Used for computing movement speed
@@ -290,7 +354,7 @@ def to_target(angle):
         # sufficiently far AND is coming to a stop. If yes, compute movement speed and 
         # retrieve + filter the raw trajectory.       
         elif dc["post"]==3:
-            if dc["subjd"] > 0.75*TARGETDIST and vtot < 0.01:
+            if dc["subjd"] > 0.8*TARGETDIST and vtot < 0.05:
                 robot.stay()
                 time.sleep(0.05)
                 myspeed = 1000*(time.time() - start_time)
@@ -299,54 +363,69 @@ def to_target(angle):
                 filter_traj()
                 
  
+def doAnswer():
+    start_time = time.time()  # To count reaction time
+    global ANSWERFLAG
+    print("Waiting for subject's response")
+    while (not ANSWERFLAG):
+        master.update_idletasks()
+        master.update()
+        time.sleep(0.3)
+    RT = 1000*(time.time() - start_time)  # RT in m-sec
+    print "--- ANSWER:%d    RT:%d"%(dc['answer'],RT)
+    ANSWERFLAG = 0
+    return(RT)
 
-def replay_traj():
-    # Push the clean trajectory back to the robot memory for replaying (and set 
-    # the final positions appropriately)
-    #robot.prepare_replay(traj) 
+
+def replay_traj(rotate_flag = False):
+    """ This function handles the replay of the trajectory. Depending whether
+    rotate_flag is True, it will either play the normal or rotated trajectory.
+    After each replay, it will also bring the subject hand back to center."""
+
+    if rotate_flag:
+        print("Rotating the trajectory in robot coordinates!")
+        # Flip coin whether +10deg or -10deg rotation 
+        rot_angle = random.choice([-1,1])*10
+        traj_rot  = rotate(traj, (dc['cx'],dc['cy']), rot_angle)
+        # The rotated trajectory is in the list of tuples....
+        print traj_rot[150]
+        print traj_rot[210]
+        print traj_rot[230]
+        
+        # Push the clean trajectory back to the robot memory for replaying 
+        # (and set the final positions appropriately)
+        robot.prepare_replay(traj_rot)
+
+    else:
+        robot.prepare_replay(traj) # Normal, unrotated
 
     print("Ready to start replaying trajectory...")
     #raw_input("Press <ENTER> to start")
-    #time.sleep(0.5)
-    #robot.start_replay()
+    time.sleep(0.5)
+    robot.start_replay()
 
-    #while not robot.replay_is_done():
-    #    master.update()
-    #    pass
+    while not robot.replay_is_done():
+        master.update()
+        pass
 
+    time.sleep(WAITTIME)
     print("Finished replaying the trajectory...")
             
-    # Important: Don't forget to go back to the center position again!
-    #time.sleep(WAITTIME)
-    #firstx,firsty = traj[0]
-    #print("\nMoving to starting point %f,%f\n"%(firstx,firsty))
-    #robot.move_stay(firstx, firsty, MOVE_SPEED)
-
-    #time.sleep(WAITTIME)
-    print("Rotating the trajectory...")
-    traj_rot = rotate(traj, (dc['cx'],dc['cy']), 5)
-    print traj_rot 
-
-    robot.prepare_replay(traj_rot)
-    
-
-    print("Ready to start replaying trajectory...")
-    #raw_input("Press <ENTER> to start")
-    #time.sleep(0.5)
-    #robot.start_replay()
-
-    #while not robot.replay_is_done():
-    #    master.update()
-    #    pass
-
-    #print("Finished replaying the trajectory...")
-            
-    # Important: Don't forget to go back to the center position again!
-    #time.sleep(WAITTIME)
-    #goToCenter(MOVE_SPEED)
+    # Important: Don't forget to return to the center position again!!
+    firstx,firsty = traj[0]
+    print("\nMoving to starting point %f, %f\n"%(firstx,firsty))
+    robot.move_stay(firstx, firsty, MOVE_SPEED)
+    time.sleep(WAITTIME)
 
 
 
+def p_test(nn):
+    if   nn==1: return 0.9
+    elif nn==2: return 0
+    elif nn==3: return 0.8
+    elif nn==4: return 0.9
+    elif nn==5: return 0.5
+    else:         return 0
 
 
 def velocity_check(x,y):
@@ -385,7 +464,6 @@ def filter_traj():
 
 def smooth_window(x,window):
     """Smooth the data using a window with requested size  [From: Floris]
-    
     This method is based on the convolution of a scaled window with the signal.
     The signal is prepared by introducing reflected copies of the signal 
     (with the window size) in both ends so that transient parts are minimized
@@ -433,14 +511,11 @@ def smooth(x):
 def checkEndpoint(angle, feedback, bias):
     print("  Checking end-position inside target zone?")
     # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
-    # TODO: Use the rotate function
-    inrad = -angle*math.pi/180
-    pivot = complex(dc['cx'],dc['cy'])   # In robot coordinates...
+    # The return values are in the robot coordinates
     tx,ty = dc['subjx'], dc['subjy']
-    rot  = complex(math.cos(inrad),math.sin(inrad))
-    trot = rot * (complex(tx, ty) - pivot) + pivot
+    trot  = rotate([(tx,ty)], (dc['cx'],dc['cy']), -angle)
     #print trot
-    PDy  = trot.real-dc['cx']
+    PDy  = trot[0][0]-dc['cx']
     print "  Lateral deviation = %f" %PDy
 
     # Check the condition to display explosion when required!
@@ -469,7 +544,7 @@ def saveLog():
 
 
 
-######## Some parameters that specify how we draw things onto our GUI window
+######## Some parameters that specifytest how we draw things onto our GUI window
 
 from Tkinter import * # Importing the Tkinter library
 master  = Tk()	      # Create an empty background window for GUI
@@ -590,12 +665,12 @@ def showCursorBar(angle, position, distance, color="yellow"):
     x2, y2 = rob_to_screen(x+CURSOR_SIZE/3, y+CURSOR_SIZE/3)
 
     # If hand position is outside the start circle, remove cursor
-    if distance < CURSOR_SIZE:      
-    	win.itemconfig("hand",fill=color)
-        win.coords("hand",*[x1,y1,x2,y2])
-    else:
-    	win.itemconfig("hand",fill="black")
-        win.coords("hand",*[0,0,0,0])
+    #if distance < CURSOR_SIZE:      
+    win.itemconfig("hand",fill=color)
+    win.coords("hand",*[x1,y1,x2,y2])
+    #else:
+    #	win.itemconfig("hand",fill="black")
+     #   win.coords("hand",*[0,0,0,0])
 	
     # TODO 1.015 make constant (START_CIRCLE_RADIUS) and define it on top
     # First draw cursorbar with a rectangle assuming it's in front (straight-ahead) 
@@ -605,9 +680,11 @@ def showCursorBar(angle, position, distance, color="yellow"):
     
     # Then rotate each polygon corner where the pivot is the current hand position.
     # We'll get rotated screen coordinates...
-    rot_item = rotate(origxy, (x,y), angle)   
+    rot_item = rotate(origxy, (x,y), angle) 
+    scr_xy    = [rob_to_screen(x,y) for x,y in rot_item]
+    scr_tuple = tuple([ item for sublist in scr_xy for item in sublist ])  
     #print rot_item
-    win.coords("handbar", *rot_item)       # Edit coordinates of the canvas object
+    win.coords("handbar", *scr_tuple)       # Edit coordinates of the canvas object
     win.itemconfig("handbar",fill=color)   # Show the target by updating its fill color.
 
 
@@ -623,16 +700,26 @@ def showTarget(angle, color="white"):
 
     # Then rotate each polygon corner where the pivot is the center/start positon.
     # We'll get rotated screen coordinates...
-    rot_item = rotate(origxy, (dc['cx'],dc['cy']), angle)
+    rot_item  = rotate(origxy, (dc['cx'],dc['cy']), angle)
+    scr_xy    = [rob_to_screen(x,y) for x,y in rot_item]
+    scr_tuple = tuple([ item for sublist in scr_xy for item in sublist ])
+
     #print rot_item      
-    win.coords("target", *rot_item)     # Edit coordinates of the canvas object
-    win.itemconfig("target",fill=color) # Show the target by updating its fill color.
+    win.coords("target", *scr_tuple)     # Edit coordinates of the canvas object
+    win.itemconfig("target",fill=color)  # Show the target by updating its fill color.
     
 
-def rotate(coords, pivot, angle, rob_coord = True):
-    """ Rotate the point(x,y) in coords around a pivot point by the given angle (in degrees).
-    Coordinates to be rotated and pivot points will be converted to complex numbers. The function 
-    returns screen coordinates (by default), unless rob_coord flag is FALSE """
+def rotate(coords, pivot, angle):
+    """ Rotate the point(x,y) in coords around a pivot point by the given angle. Coordinates to 
+    be rotated and pivot points will be converted to complex numbers.
+    Arguments
+        coords: list of tuples (x,y)  <- important!! 
+        pivot : pivot point of reference
+        angle : angle, in degree
+        rob_coord = True; outputs ar, unless it's False 
+
+    output:
+        returns a list of rotated tuples in the ROBOT coordinates by default."""
 
     pivot = complex(pivot[0],pivot[1])
     # Convert rotation angle into radians first
@@ -642,12 +729,13 @@ def rotate(coords, pivot, angle, rob_coord = True):
     for x, y in coords:
         v = rot * (complex(x,y) - pivot) + pivot
         newxy.append((v.real,v.imag))
-        
-    if rob_coord: # This transforms the robot coordinate to screen coordinate!
-    	scr_xy = [rob_to_screen(x,y) for x,y in newxy]
-        return tuple([ item for sublist in scr_xy for item in sublist ])
-    else:
-    	return tuple([ item for sublist in newxy  for item in sublist ])
+    return (newxy)    
+
+    #if rob_coord:
+    #    return tuple([ item for sublist in newxy for item in sublist ])
+    #else:
+    #    scr_xy = [rob_to_screen(x,y) for x,y in newxy]
+    #    return tuple([ item for sublist in scr_xy for item in sublist ])
 
 
 def showImage(name, px=w/2, py=h/2, delay=1.0):
@@ -662,6 +750,7 @@ def showImage(name, px=w/2, py=h/2, delay=1.0):
     samsung.update()
     time.sleep(delay)
     label.config(image='')   
+    time.sleep(0.1)
     # Occasionally you call update() to refresh the canvas....
     samsung.update()
     #print "  Removing inage from the canvas...."
@@ -670,6 +759,8 @@ def showImage(name, px=w/2, py=h/2, delay=1.0):
 #from PIL import ImageTk, Image
 
 master.bind('<Return>', enterStart)
+master.bind('<Left>'  , clickYes)
+master.bind('<Right>' , clickNo)
 
 os.system("clear")
 
