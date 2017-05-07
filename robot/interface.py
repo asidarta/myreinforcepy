@@ -10,7 +10,7 @@
 # - controller 5  : static_ctl_fade (hold and fade)
 # - controller 9  : trajectory_reproduce (replay a trajectory loaded into memory)
 # - controller 16 : static_ctl (hold at specified location)
-#
+# - controller 17 : curl field (according to old Tcl code)
 #
 #
 # The main files here are:
@@ -688,6 +688,37 @@ def tryenc(r):
 
 
 
+
+def start_capture_and_fade(x,y):  ## UNUSED??
+    """ This starts capturing the trajectory inside the robot and also stays at 
+    the current location, but gradually fades out the forces.
+    So this is a combination of stay_fade() and start_capture().
+    """
+    # Reset the capturing point
+    robot.wshm('traj_count',0) # define that we are starting from the starting point
+
+    # Staying-fading part
+    robot.wshm("fvv_force_fade",1.0) # This starts at 1.0 but exponentially decays to infinitely small
+    robot.wshm("plg_p1x",x)
+    robot.wshm("plg_p1y",y)
+    robot.wshm("plg_stiffness",robot.stiffness)
+    robot.wshm("plg_damping",robot.damping)
+
+    # Use the controller trajectory_capture_stayfade
+    robot.controller(10)        # trajectory_capture_stayfade
+
+
+
+def start_curl(ffval):
+    """ Initiate either CCW or CW curl-field. CCW has a negative ffval, 
+        while CW has a positive ffval. Don't input ffval > 18!  
+        [~ananda, May2017]
+    """
+    if ffval > 18: ffval = 18
+    print("Activating curl controller, curl=%d"%ffval)
+    wshm("curl", ffval)
+    # start curl field robot controller declared inside {pl_uslot.c}
+    controller(17)
 
 
 

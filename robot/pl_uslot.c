@@ -59,6 +59,8 @@ void trajectory_capture(u32);
 void trajectory_reproduce(u32);
 void trajectory_capture_stayfade(u32);
 
+void curl_ctl(u32);
+
 
 
 void
@@ -80,7 +82,8 @@ init_slot_fns(void)
   ob->slot_fns[12] = null_ctl;
   ob->slot_fns[13] = null_ctl;
   ob->slot_fns[14] = movetopt;
-  ob->slot_fns[16] = static_ctl;   // stay at p1x p1y under active control
+  ob->slot_fns[16] = static_ctl;      // stay at p1x p1y under active control
+  ob->slot_fns[17] = curl_ctl;        // Ananda added this = velocity-dependent force field
 }
 
 #define X ob->pos.x
@@ -620,4 +623,34 @@ trajectory_capture_stayfade(u32 id)
   ob->motor_force.y = fY;
 #endif
 }
+
+
+
+
+// curl controller
+// with x=vy y=-vx, and +curl if it rotates cw. and -curl rotates ccw.
+
+void
+curl_ctl(u32 id)
+{
+
+    f64 curl;
+    f64 damp;
+
+    curl = ob->curl;
+    damp = ob->damp;
+
+    fX =  ( curl * (vY) );
+    fY = -( curl * (vX) );
+    
+    #ifdef dyn_comp 
+    	dynamics_compensation(fX,fY,3,1.0);
+	# else
+    	ob->motor_force.x = fX;
+    	ob->motor_force.y = fY;
+	#endif
+}
+
+
+
 
