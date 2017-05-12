@@ -32,7 +32,7 @@ TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle
 TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
 TARGETTHICK = 0.008  # 16 mm target thickness
 START_SIZE  = 0.009  #  9 mm start point radius
-CURSOR_SIZE = 0.004  #  4 mm cursor point radius
+CURSOR_SIZE = 0.003  #  4 mm cursor point radius
 WAITTIME    = 0.75   # 750 msec general wait or delay time 
 MOVE_SPEED  = 1.5    # duration (in sec) of the robot moving the subject to the center
 FADEWAIT    = 1.0
@@ -79,10 +79,11 @@ def getCenter():
         #txt = open(mypwd + "/data/and_center.txt", "r").readlines()
         center = [[float(v) for v in txt.split(",")] for txt in open(
                       dc['logpath']+subjid.get()+"_center.txt", "r").readlines()]
-        #print(center)
         print("Loading existing coordinates: %f, %f"%(center[0][0],center[0][1]))
         dc['cx'],dc['cy'] = (center[0][0],center[0][1])
     else:
+        if not os.path.exists(dc['logpath']): 
+             os.makedirs(dc['logpath']) # For a new subject create a folder first!
         print("This is a new subject. Center position saved.")
         dc['cx'], dc['cy'] = robot.rshm('x'),robot.rshm('y')
         txt_file = open(dc['logpath']+subjid.get()+"_center.txt", "w")
@@ -185,7 +186,7 @@ def read_design_file(mpath):
         return 0
 
 
-# Run only for the first time: familiarization trials with instruction.
+# Run only for the first time: familiarization trials with instructions.
 def runPractice():
     global keepPrac
     x,y = robot.rshm('x'),robot.rshm('y')
@@ -261,7 +262,7 @@ def runBlock():
         playInstruct(6) if (varopt.get() == "training") else playInstruct(7)
 
     for xxx in dc['mydesign']['trials']:
-        # For running one trial of the block....
+        # For running each trial of the block....
         index  = xxx['trial']
     	angle  = xxx['angle']
         ffield = xxx['FField']
@@ -305,8 +306,8 @@ def runBlock():
 
 def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
     """ This handles the whole trial segment when subject moves to hidden target 
-    It formally takes 3 inputs: angle, whether you want to show feedback, and 
-    negbias and posbias of the reward zone.
+    It formally takes 3 inputs: angle, whether you want to show feedback (reward), and 
+    maximum negbias and posbias to receive feedback. By default, feedback is not shown.
     """
     dc['subjx']= 0;  dc['subjy']= 0
     win.itemconfig("start",fill="white")
@@ -321,9 +322,9 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
         # (2) First get current x,y robot position and update yellow cursor location
         x,y = robot.rshm('x'),robot.rshm('y')
         dc['subjx'], dc['subjy'] = x, y
-        showCursorBar(angle, (x,y), 0)
         # Compute current distance from the center/start--robot coordinate! 
     	dc['subjd'] = math.sqrt((x-dc['cx'])**2 + (y-dc['cy'])**2)
+        showCursorBar(angle, (x,y), dc['subjd'])
     	#print("Distance from center position= %f"%(subjd))
 
         vx, vy = robot.rshm('fsoft_xvel'), robot.rshm('fsoft_yvel')
@@ -403,8 +404,8 @@ def checkEndpoint(angle, feedback, rbias):
 # Function save logfile and mkdir if needed
 def saveLog():
     print("---Saving trial log.....")   
-    if not os.path.exists(dc['logpath']):
-	os.makedirs(dc['logpath'])
+    # Making a new directory has been moved to getCenter()...
+    #if not os.path.exists(dc['logpath']): os.makedirs(dc['logpath'])
     with open("%s.txt"%dc['logname'],'aw') as log_file:
         log_file.write(dc['logAccuracy'])  # Save every trial as text line
 
@@ -528,14 +529,14 @@ def prepareCanvas():
     that only will change their behavior in each trial of the block. In Tk, a new object 
     will be drawn on top of existing objects"""
     win.create_polygon([0,0,0,1,1,1,0,0], fill="black", width = 10, tag="target")
-    win.create_oval   ([0,0,1,1],width=0, fill="black", tag="targetcir")
     win.create_polygon([0,0,0,1,1,1,0,0], fill="black", width = 10, tag="handbar")
-    win.create_oval   ([0,0,1,1],width=0, fill="black", tag="hand")
+    win.create_oval   ([0,0,1,1], width=1, fill="black", tag="targetcir")
+    win.create_oval   ([0,0,1,1], width=1, fill="black", tag="hand")
     samsung.update()   # Update the canvas to let changes take effect
  
 
 
-def showCursorBar(angle, position, distance, color="yellow"):
+def showCursorBar(angle, position, distance, color="yellow", barflag=True):
     """ Draw the cursor at the current position (if not outside the start circle) and draw 
     a bar indicating the distance from the starting position always.
     Angle    : the angle of the target w.r.t to straight-ahead direction
@@ -567,10 +568,11 @@ def showCursorBar(angle, position, distance, color="yellow"):
     scr_xy    = [rob_to_screen(x,y) for x,y in rot_item]
     scr_tuple = tuple([ item for sublist in scr_xy for item in sublist ])  
     #print rot_item
-    win.coords("handbar", *scr_tuple)      # Edit coordinates of the canvas object
-    win.itemconfig("handbar",fill=color)   # Show the target by updating its fill color.
-    win.tag_lower("start", "hand")
-    win.tag_lower("start", "handbar")
+    if barflag:
+       win.coords("handbar", *scr_tuple)      # Edit coordinates of the canvas object
+       win.itemconfig("handbar",fill=color)   # Show the target by updating fill color.
+       win.tag_lower("start", "hand")
+       win.tag_lower("start", "handbar")
     samsung.update()     # Update the canvas to let changes take effect
 
 
@@ -668,6 +670,7 @@ robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")
 
 robot.zeroft()
+print("\n\nPress START or <Enter> key to continue\n")
 
 mainGUI()
 robot_canvas()

@@ -86,6 +86,8 @@ def getCenter():
         print("Loading existing coordinates: %f, %f"%(center[0][0],center[0][1]))
         dc['cx'],dc['cy'] = (center[0][0],center[0][1])
     else:
+        if not os.path.exists(dc['logpath']):   
+             os.makedirs(dc['logpath'])   # Create a new folder first for new subject!
         print("This is a new subject. Center position saved.")
         dc['cx'], dc['cy'] = robot.rshm('x'),robot.rshm('y')
         txt_file = open(dc['logpath']+subjid.get()+"_center.txt", "w")
@@ -252,7 +254,7 @@ def runBlock (practice_flag):
         if not somatic.get(): showBox()  # This is only for Visuosp test
         playInstruct(1)
     
-    for xxx in dc['mydesign']:
+    for xxx in dc['mydesign']: # Going through each trial
         index  = xxx['trial']
         anchors= xxx['anchors']
         probe  = xxx['probe']
@@ -334,8 +336,8 @@ def to_target(directions):
 # Function save logfile and mkdir if needed
 def saveLog():
     print("---Saving trial log.....")   
-    if not os.path.exists(dc['logpath']):
-	os.makedirs(dc['logpath'])
+    # Making a new directory has been moved to getCenter()...
+    #if not os.path.exists(dc['logpath']): os.makedirs(dc['logpath'])
     dc['wmtest']="Som_" if somatic.get() else "Vis_"
     with open(dc['logpath']+dc['wmtest']+dc['logfileID']+".txt",'aw') as log_file:
         log_file.write(dc['log'])  # Save every trial as text line
