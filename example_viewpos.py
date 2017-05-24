@@ -1,4 +1,4 @@
-from tkinter import *
+from Tkinter import *
 
 import time
 import robot.interface as robot
@@ -33,9 +33,9 @@ SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
 
 replaying = False   # whether we are currently replaying something
 
-
 robot.load()
-robot.bias_force_transducers()
+robot.zeroft()   #?
+#robot.bias_force_transducers()
 #robot.stay() # stay put
 robot.status()
 

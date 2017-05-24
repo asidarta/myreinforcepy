@@ -30,7 +30,7 @@ w, h   = 1920,1080   # Samsung LCD size
 # Global definition of constants
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
 TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
-TARGETTHICK = 0.008  # 16 mm target thickness
+TARGETTHICK = 0.01   # 20 mm target thickness
 START_SIZE  = 0.009  #  9 mm start point radius
 CURSOR_SIZE = 0.003  #  4 mm cursor point radius
 WAITTIME    = 0.75   # 750 msec general wait or delay time 
@@ -42,7 +42,6 @@ FADEWAIT    = 1.0
 #                 1: hand within/in the start position,
 #                 2: hand on the way to target, 
 #                 3: hand within/in the target)
-dc['scores']= 0 # points for successful trials
 
 
 def quit():
@@ -51,7 +50,6 @@ def quit():
     keep_going = False
     reach_target = False
     master.destroy()
-    robot.stop_log()
     robot.unload()  # Close/kill robot process
     print("\nOkie! Bye-bye...\n")
 
@@ -124,6 +122,9 @@ def enterStart(event):
     dc['logfileID'] = "%s%i"%(dc["subjid"],dc["filenum"])
     dc['logpath']   = '%s/data/%s_data/'%(mypwd,dc["subjid"])
     dc['logname']   = '%smotorLog_%s'%(dc['logpath'],dc['logfileID'])
+    dc['scores']    = 0    # have to reset the score to 0 for each run!
+    dc['curtrial']  = 0    # initialize current test trial
+    dc['subjd']     = 0    # initialize robot distance from the center of start position
 
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
@@ -190,7 +191,7 @@ def read_design_file(mpath):
 def runPractice():
     global keepPrac
     x,y = robot.rshm('x'),robot.rshm('y')
-    showCursorBar(0, (x,y), 0)
+    showCursorBar(0, (x,y))
 
     print("--- Practice stage-1: yellow cursor")
     #playInstruct(1)
@@ -201,8 +202,8 @@ def runPractice():
         # First read out current x,y robot position
         x,y = robot.rshm('x'),robot.rshm('y')
         # Compute current distance from the center/start--robot coordinate! 
-        d = math.sqrt((x-dc['cx'])**2 + (y-dc['cy'])**2)
-        showCursorBar(0, (x,y), d)
+        dc['subjd'] = math.sqrt((x-dc['cx'])**2 + (y-dc['cy'])**2)
+        showCursorBar(0, (x,y))
         time.sleep(0.01)
 
     goToCenter(MOVE_SPEED) # Bring the arm back to the center first
@@ -297,7 +298,8 @@ def runBlock():
 
     print("\n#### Test has ended! You may continue or QUIT now.....")
     
-    time.sleep(2)  # 2-sec delay
+    robot.stop_log()  # Stop data logging now!
+    time.sleep(2)     # 2-sec delay
     # Allow us to proceed to the next block without quiting
     e2.config(state='normal')  
     e4.config(state='normal')
@@ -312,7 +314,7 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
     dc['subjx']= 0;  dc['subjy']= 0
     win.itemconfig("start",fill="white")
     showTarget(angle)
-    showCursorBar(angle, (dc['cx'],dc['cy']), 0)
+    showCursorBar(angle, (dc['cx'],dc['cy']))
     reach_target = False
 
     if ffval != 0: robot.start_curl(ffval)
@@ -324,7 +326,7 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
         dc['subjx'], dc['subjy'] = x, y
         # Compute current distance from the center/start--robot coordinate! 
     	dc['subjd'] = math.sqrt((x-dc['cx'])**2 + (y-dc['cy'])**2)
-        showCursorBar(angle, (x,y), dc['subjd'])
+        showCursorBar(angle, (x,y))
     	#print("Distance from center position= %f"%(subjd))
 
         vx, vy = robot.rshm('fsoft_xvel'), robot.rshm('fsoft_yvel')
@@ -419,9 +421,9 @@ samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
                       # Interesting, you shouldn't have 2 Tk() instances, use Toplevel()
 	              # and this will solve the problem of pyimage not displayed
 
-master.geometry('%dx%d+%d+%d' % (400, 200, 500, 200)) # Nice setting: w,h,x,y   
+master.geometry('%dx%d+%d+%d' % (400, 200, 500, 200)) # Nice GUI setting: w,h,x,y   
 master.title("Sensorimotor Learning User Interface")
-master.protocol("WM_DELETE_WINDOW", quit)
+master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
 
 subjid  = StringVar()
 filenum = StringVar()
@@ -465,6 +467,7 @@ def mainGUI():
     e1 = Entry(topFrame, width = 6, bd =1, textvariable = subjid)
     e1.grid(row=0, column=1)
     e1.insert(END, "aes")
+    e1.focus()
     Label(topFrame, text="File Number: ").grid(row=0, column=3, padx=(40,0))
     e2 = Entry(topFrame, width = 3, bd =1, textvariable = filenum)
     e2.grid(row=0, column=4)
@@ -536,12 +539,13 @@ def prepareCanvas():
  
 
 
-def showCursorBar(angle, position, distance, color="yellow", barflag=True):
+def showCursorBar(angle, position, color="yellow", barflag=True):
     """ Draw the cursor at the current position (if not outside the start circle) and draw 
     a bar indicating the distance from the starting position always.
     Angle    : the angle of the target w.r.t to straight-ahead direction
     Position : the CURRENT hand position in robot coordinates
-    Distance : the distance traveled by the subject
+    color    : the color of the canvas object (default: yellow)
+    barflag  : is the hand cursor bar flag active? (default: YES)
     """
     (x,y) = position  #print("Showing cursor bar!")
     
@@ -550,7 +554,7 @@ def showCursorBar(angle, position, distance, color="yellow", barflag=True):
     x2, y2 = rob_to_screen(x+CURSOR_SIZE, y+CURSOR_SIZE)
 
     # If hand position is outside the start circle, remove cursor
-    if distance <= START_SIZE:      
+    if dc['subjd'] <= START_SIZE:      
        win.itemconfig("hand",fill=color)
        win.coords("hand",*[x1,y1,x2,y2])
     else:
@@ -558,8 +562,8 @@ def showCursorBar(angle, position, distance, color="yellow", barflag=True):
        win.coords("hand",*[0,0,0,0])
 	
     # First draw cursorbar with a rectangle assuming it's in front (straight-ahead) 
-    minx, miny = -.5, y - TARGETTHICK/8
-    maxx, maxy =  .5, y + TARGETTHICK/8
+    minx, miny = -.5, y - TARGETTHICK/10
+    maxx, maxy =  .5, y + TARGETTHICK/10
     origxy = [(minx,miny),(maxx,miny),(maxx,maxy),(minx,maxy)]
     
     # Then rotate each polygon corner where the pivot is the current hand position.
@@ -681,7 +685,6 @@ reach_target = True
 while keep_going:
     # Although it maintains a main loop, this routine blocks! Use update() instead...
     #master.mainloop()
-    #routine_checks()
     robot.rshm("curl")
     master.update_idletasks()
     master.update()

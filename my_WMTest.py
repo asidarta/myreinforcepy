@@ -353,14 +353,15 @@ samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
 	              # and this will solve the problem of pyimage not displayed
 
 w, h = 1920,1080
-master.geometry('%dx%d+%d+%d' % (370, 170, 500, 200))   # Nice geometry setting!!
-master.protocol("WM_DELETE_WINDOW", quit)
 master.title("-- Somatic WM Test --")
+master.geometry('%dx%d+%d+%d' % (370, 170, 500, 200))   # Nice GUI geometry: w,h,x,y 
+master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
 
 subjid  = StringVar()
 filenum = StringVar()
 mymsg   = StringVar()
 somatic = BooleanVar()
+
 
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
