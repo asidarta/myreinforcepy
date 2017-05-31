@@ -10,6 +10,7 @@ Revisions: Adding a feature to replay the trajectory while the subject remains p
            Confirming robot data-logging and audio play features work (May 4)
            Adding a feature to replay lag-2 trajectory too! (May 5)
            Using a constant Y-center position; using a picture as 'Go'-signal (May 17)
+           Adding a flag to show that the test is currently active. Bugs fixed. (May 30)
 """
 
 
@@ -35,11 +36,11 @@ w, h   = 1920,1080   # Samsung LCD size
 nsince_last_test = 0
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-NEGBIAS = -0.005   # 10 mm reward zone width
-POSBIAS = +0.005   # 10 mm reward zone width
+NEGBIAS = -0.006   # 12 mm reward zone width
+POSBIAS = +0.006   # 12 mm reward zone width
 VELMIN  = 1200
 VELMAX  = 800
-NTRIAL_MOTOR = 2
+NTRIAL_MOTOR = 20
 NTRIAL_TRAIN = 50
 
 # Global definition for other constants
@@ -47,7 +48,7 @@ YCENTER     = -0.005 # Let's fixed the Y-center position!
 ANSWERFLAG  = 0      # Flag = 1 means subject has responded
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
 TARGETDIST  = 0.16   # move 15 cm from the center position (default!)
-TARGETTHICK = 0.013  # 26 mm target thickness
+TARGETTHICK = 0.011  # 22 mm target thickness
 START_SIZE  = 0.009  #  9 mm start point radius
 CURSOR_SIZE = 0.003  #  3 mm cursor point radius
 WAITTIME    = 0.75   # 750 msec general wait or delay time 
@@ -62,11 +63,13 @@ SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
 # [May 11] We decide test direction for lag-1 and lag-2 test respectively (+/-45 deg). 
 # If lag-1 is selected as 45deg, then lag-2 should be -45 deg. This random selection 
 # is executed once, at the very first when the code is run.
-test_angle = [-45,45]
-random.shuffle(test_angle)
+#test_angle = [-45,45]
+#random.shuffle(test_angle)     ###### This is no longer used!
 
 # This is to shift the reward zone. It's a +/-10 mm shift from the subject's baseline bias.
-BIAS_SHIFT = random.choice([-1,1])*0.01
+# It's also dependent on the reward zone width such that the reward chance is ~25%
+# during the first training block.
+BIAS_SHIFT = random.choice([-1,1])*(POSBIAS-NEGBIAS)
 
 
 # Now this is contained in fvv_trial_phase variable...
@@ -75,6 +78,7 @@ BIAS_SHIFT = random.choice([-1,1])*0.01
 #                 2: hand on the way to target, 
 #                 3: hand within/in the target)
 
+dc["active"] = False  ## Adding this flag to show that the test is currently active!!
 
 
 
@@ -127,6 +131,7 @@ def getCenter():
     dc['c.scr'] = rob_to_screen(dc['cx'],dc['cy'])
 
 
+
 def goToCenter(speed):
     """ Move to the center or start position and stay there"""
     robot.wshm('fvv_trial_phase', 0)
@@ -148,11 +153,16 @@ def goToCenter(speed):
 def enterStart(event):
     """ Start main program, taking <Enter> button as input-event """
 
+    if dc["active"]:  # Is the test already running?
+        print("##Error## Already active! -- aborting")
+	return
+
     # First, check whether the entry fields have usable text (need subjID, a file number, etc.)
     if not subjid.get() or not filenum.get().isdigit():
         print("##Error## Subject ID and/or file numbers are empty or file number is not a digit!")
         return
 
+    dc["active"]    = True # flag stating we are currently running
     dc['task']      = varopt.get().split()[0]  # task type
     dc['lag']       = varopt.get().split()[2]  # lag type
     dc["subjid"]    = subjid.get()
@@ -168,6 +178,7 @@ def enterStart(event):
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
         print ("File already exists: %s.txt"%dc["logname"] )
+    	dc["active"]    = False # mark that we are no longer running
         return
 
     # Now we will read the design file, which tells us what trials to run
@@ -192,7 +203,6 @@ def enterStart(event):
     # remove old trajectory from the GUI if it's there
     if traj_display!=None: 
         wingui.delete("traj")
-
 
     if dc["filenum"] == 0:
         prepareCanvas()       # Prepare drawing canvas objects
@@ -220,9 +230,9 @@ def read_design_file(mpath):
         return 0
 
 
+
 # Run only for the first time: familiarization trials with instructions. 
 # This simple block is executed in sequence...
-
 def runPractice():
     global keepPrac
     x,y = robot.rshm('x'),robot.rshm('y')
@@ -332,9 +342,11 @@ def runBlock():
     """ The actual test runs once 'Start' or <Enter> key is pressed """
 
     # Reference: straight-ahead is defined as 90 deg
-    global test_angle
+    #global test_angle
     triallag = 1 if dc['lag'] == "lag-1" else 2
-    angle = test_angle[triallag-1] # index of a shuffled list
+    #angle = test_angle[triallag-1] # index of a shuffled list
+    global angle
+    angle = vardeg.get()
 
     # Set other experiment design parameters. Look how I check for two string options!!
     rbias  = [NEGBIAS,POSBIAS]
@@ -365,8 +377,8 @@ def runBlock():
     time.sleep(2)
     robot.stay_fade(dc['cx'],dc['cy'])  # To release robot_stay
 
-    # Allow us to proceed to the next block without quiting
     master.update()
+    dc["active"] = False   # allow running a new block
 
 
 def to_target(angle, fdback=0, rbias=[0,0]):
@@ -730,11 +742,11 @@ def checkEndpoint(angle, feedback, rbias):
     if dc['task'] in ("training", "motor_post"): 
         amount_shifted = BIAS_SHIFT + bbias.get()
         PDy =  amount_shifted - PDy
-        print ("Reward zone has shifted for %f"%(BIAS_SHIFT + bbias.get()))
+        print ("  Reward zone has shifted for %f"%(BIAS_SHIFT + bbias.get()))
     else:
         amount_shifted = 0
 
-    print "  Lateral deviation = %f" %PDy
+    print "Lateral deviation = %f" %PDy
     # Add deviation value to a list 
     dc['bbias'].append(PDy)
 
@@ -764,7 +776,7 @@ samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
                       # Interesting, you shouldn't have 2 Tk() instances, use Toplevel()
 	              # and this will solve the problem of pyimage not displayed
 
-master.geometry('%dx%d+%d+%d' % (800, 650, 500, 200)) # Nice GUI setting: w,h,x,y   
+master.geometry('%dx%d+%d+%d' % (550, 500, 500, 200)) # Nice GUI setting: w,h,x,y   
 master.title("Reward-based Sensorimotor Learning")
 master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
 
@@ -772,6 +784,7 @@ subjid  = StringVar()
 filenum = StringVar()
 mymsg   = StringVar()
 varopt  = StringVar()
+vardeg  = IntVar()
 bbias   = DoubleVar()
 playAudio = BooleanVar()
 
@@ -791,11 +804,8 @@ def rob_to_screen(robx, roby):
 
 
 # For canvas on the main GUI to draw subject's trajectory
-#cw,ch = 450,350
-#robot_scale = 500
-
-cw,ch = 800,600
-robot_scale = 700
+cw,ch = 550,400
+robot_scale = 600
 
 
 def rob_to_gui(x,y):
@@ -805,7 +815,7 @@ def rob_to_gui(x,y):
 
 def mainGUI():
     # Create two different frames on the master -----
-    topFrame = Frame(master, width=450, height=100)
+    topFrame = Frame(master, width=550, height=100)
     topFrame.grid(column=0, row=1)
     #frame.bind('<Left>', leftKey)
     bottomFrame = Frame(master, bg="white")
@@ -850,9 +860,13 @@ def mainGUI():
     #chk = Checkbutton(topFrame, text="play Audio?", variable=playAudio)
     #chk.grid(row=2, column=3, sticky=E)
 
-    # Entry widget for 5th row --------------
+    # Entry widget for 4th row [new: May 23] --------------
     #Label(topFrame, text="Hello",textvariable=mymsg).grid(row=4, sticky=E)
-    
+    Label(topFrame, text="Angle (deg): ").grid(row=2, column=3, sticky=E)
+    e6 = OptionMenu(topFrame, vardeg, "-45","+45")
+    e6.grid(row=2, column=4, columnspan=3, sticky=W, pady=5)
+    vardeg.set("-45")      # set default value
+
     # Create buttons ---------------
     myButton1 = Button(bottomFrame, text="START", bg="#0FAF0F", command=clickStart)
     myButton1.grid(row=0, padx = 15)
@@ -989,7 +1003,7 @@ def showCursorBar(angle, position, color="yellow", barflag=True):
 
 
 
-def showTarget(angle, color="white"):
+def showTarget(angle, color="#505050"):
     """
     Show the target at the given angle painted in the given color.
     """
@@ -1089,6 +1103,8 @@ robot.zeroft()
 print("\n\nPress START or <Enter> key to continue\n")
 
 global traj_display
+global angle
+
 traj_display = None
 
 mainGUI()
