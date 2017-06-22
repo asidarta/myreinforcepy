@@ -36,14 +36,16 @@ w, h   = 1920,1080   # Samsung LCD size
 nsince_last_test = 0
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-NEGBIAS = -0.006   # 12 mm reward zone width
-POSBIAS = +0.006   # 12 mm reward zone width
+NEGBIAS = -0.006   # 12 mm reward zone width  ?????? Make it bigger!
+POSBIAS = +0.006   # 12 mm reward zone width  ?????? Make it bigger!
 VELMIN  = 1200
 VELMAX  = 800
 NTRIAL_MOTOR = 20
 NTRIAL_TRAIN = 50
+ROT_MAG = 5       # Value of rotation angle for WM Test.
 
 # Global definition for other constants
+VER_SOFT    = "WM2"
 YCENTER     = -0.005 # Let's fixed the Y-center position!
 ANSWERFLAG  = 0      # Flag = 1 means subject has responded
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
@@ -63,8 +65,8 @@ SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
 # [May 11] We decide test direction for lag-1 and lag-2 test respectively (+/-45 deg). 
 # If lag-1 is selected as 45deg, then lag-2 should be -45 deg. This random selection 
 # is executed once, at the very first when the code is run.
-#test_angle = [-45,45]
-#random.shuffle(test_angle)     ###### This is no longer used!
+test_angle = [-45,45]
+random.shuffle(test_angle)
 
 # This is to shift the reward zone. It's a +/-10 mm shift from the subject's baseline bias.
 # It's also dependent on the reward zone width such that the reward chance is ~25%
@@ -129,7 +131,6 @@ def getCenter():
         txt_file.close()
     # Also useful to define center pos in the screen coordinate!       
     dc['c.scr'] = rob_to_screen(dc['cx'],dc['cy'])
-
 
 
 def goToCenter(speed):
@@ -204,6 +205,7 @@ def enterStart(event):
     if traj_display!=None: 
         wingui.delete("traj")
 
+
     if dc["filenum"] == 0:
         prepareCanvas()       # Prepare drawing canvas objects
         # Only when filenum = 0; familiarization trials for a straightahead direction
@@ -213,6 +215,10 @@ def enterStart(event):
         prepareCanvas()       # Prepare drawing canvas objects
         print("\nEntering Test Block now.........\n")
         runBlock()   # Once set, we're ready for the main loop (actual test!)
+
+    dc['session'] = 1 if(dc['filenum'] < 7) else 2
+    #If we change number of blocks per session WE NEED TO CHANGE THIS !!!
+
 
 
 
@@ -230,9 +236,9 @@ def read_design_file(mpath):
         return 0
 
 
-
 # Run only for the first time: familiarization trials with instructions. 
 # This simple block is executed in sequence...
+
 def runPractice():
     global keepPrac
     x,y = robot.rshm('x'),robot.rshm('y')
@@ -302,7 +308,7 @@ def runPractice():
         
     keepPrac = True
     fdback = 1
-    rbias  = [-0.01,0.01]
+    rbias  = [-0.01,0.01]   # You asked me to make it bigger so that easier to get explo!
     #playInstruct(4)
     while keepPrac:
         to_target(angle,fdback,rbias)    
@@ -331,7 +337,7 @@ def runPractice():
         return_toStart(triallag)
 
     print("\n\n#### Familiarization block has ended! Press QUIT button now.....")
-
+    dc["active"] = False # flag stating we are currently running
 
 
 
@@ -347,6 +353,8 @@ def runBlock():
     #angle = test_angle[triallag-1] # index of a shuffled list
     global angle
     angle = vardeg.get()
+
+    saveLog(True)    # Add this to save the column headers (Jun9)   
 
     # Set other experiment design parameters. Look how I check for two string options!!
     rbias  = [NEGBIAS,POSBIAS]
@@ -378,7 +386,7 @@ def runBlock():
     robot.stay_fade(dc['cx'],dc['cy'])  # To release robot_stay
 
     master.update()
-    dc["active"] = False   # allow running a new block
+    dc["active"]    = False   # allow running a new block
 
 
 def to_target(angle, fdback=0, rbias=[0,0]):
@@ -508,17 +516,10 @@ def return_toStart(triallag):
        robot.move_stay(firstx, firsty, MOVE_SPEED)
        showImage("test_trial.gif",630,150,1.5)
             
-       # If this is test trial, now replay the trajectory. Flip coin 
-       # whether we replay the rotated or normal trajectory first...
+       # If this is test trial, now replay the trajectory.
+       # DAVID'S IDEA, JUST ROTATE ONCE ONLY!!!!
        time.sleep(0.5)
-       if random.random() < 0.5:           
-	  replay_traj(False)
-          replay_traj(True)
-          dc['ref'] = 1 # Correct answer: 1st replay
-       else:
-	  replay_traj(True)
-          replay_traj(False)
-          dc['ref'] = 2 # Correct answer: 2nd replay
+       replay_traj(True)
             
        # (7) Wait for subject's response, then go back to the center position!
        RT = doAnswer()
@@ -529,21 +530,25 @@ def return_toStart(triallag):
        nsince_last_test = nsince_last_test + 1
        #print nsince_last_test
        goToCenter(MOVE_SPEED)
-       dc['ref'], dc['answer'], RT = -1,-1,-1
+       dc['ref'], dc['answer'], RT = 'no_wm','no_wm',0
 
     # (9) We concatenate the logfile content with the WM test response
-    dc['logAnswer'] = "%s %d %d %d %s %d\n"%(dc['logAnswer'],triallag,dc['ref'],dc['answer'],dc['task'],RT)	    
+    dc['logAnswer'] = "%s %d %s %s %s %d %d\n"%(dc['logAnswer'],triallag,dc['ref'],dc['answer'],dc['task'],RT,ROT_MAG)
  
             
 
                 
 # Function save logfile and mkdir if needed
-def saveLog():
-    print("Saving trial log.....")   
+def saveLog(header = False):
     # Making a new directory has been moved to getCenter()...
     #if not os.path.exists(dc['logpath']): os.makedirs(dc['logpath'])
     with open("%s.txt"%dc['logname'],'aw') as log_file:
-        log_file.write(dc['logAnswer'])  # Save every trial as text line
+        if (header == False):
+            print("Saving trial log.....")
+            log_file.write(dc['logAnswer'])  # Save every trial as text line
+        else:
+            print("Creating logfile header.....")
+            log_file.write("%s\n"%("Trial_number PDy angle boom amount_shifted x y speed second_bias first_bias PDy_shifted version reward_width lag true_answer part_answer task WM_RT rot_angle"))
 
 
 def doAnswer():
@@ -555,7 +560,7 @@ def doAnswer():
         master.update()
         time.sleep(0.3)
     RT = 1000*(time.time() - start_time)  # RT in m-sec
-    print "--- ANSWER:%d    RT:%d"%(dc['answer'],RT)
+    print "--- ANSWER: %s    RT:%d"%(dc['answer'],RT)
     ANSWERFLAG = 0
     return(RT)
 
@@ -579,7 +584,7 @@ def select_traj(dd=1):
 
 
 
-def replay_traj(rotate_flag = False):
+def replay_traj(rotate_flag = True):
     """ This function handles the replay of the trajectory. Depending whether
     rotate_flag is True, it will either play the normal or rotated trajectory.
     After each replay, it will also bring the subject hand back to center."""
@@ -588,10 +593,11 @@ def replay_traj(rotate_flag = False):
     traj = dc['ttraj']
 
     if rotate_flag:
-        print("ROTATING the trajectory in robot coordinates!")
         # Flip coin whether +10deg or -10deg rotation 
-        rot_angle = random.choice([-1,1])*10
+
+        rot_angle = random.choice([-1,1]) * ROT_MAG     # Magniture of rotation
         traj_rot  = rotate(traj, (dc['cx'],dc['cy']), rot_angle)
+        print("ROTATING the trajectory in robot coords, %d degree"%(rot_angle))
         # The rotated trajectory is in the list of tuples....
         #print traj_rot[150]
         #print traj_rot[210]
@@ -600,6 +606,7 @@ def replay_traj(rotate_flag = False):
         # Push the clean trajectory back to the robot memory for replaying 
         # (and set the final positions apprdc['speed']opriately)
         robot.prepare_replay(traj_rot)
+        dc['ref'] = 'left' if(np.sign(rot_angle) > 0) else 'right'
 
     else:
         robot.prepare_replay(traj) # Normal, unrotated
@@ -741,17 +748,18 @@ def checkEndpoint(angle, feedback, rbias):
     # to both training and post_test.
     if dc['task'] in ("training", "motor_post"): 
         amount_shifted = BIAS_SHIFT + bbias.get()
-        PDy =  amount_shifted - PDy
+        PDy_shift =  amount_shifted - PDy
         print ("  Reward zone has shifted for %f"%(BIAS_SHIFT + bbias.get()))
     else:
+        PDy_shift =  PDy
         amount_shifted = 0
 
-    print "Lateral deviation = %f" %PDy
-    # Add deviation value to a list 
+    # Add deviation value to a list
+    print "Lateral deviation = %f" % PDy_shift
     dc['bbias'].append(PDy)
 
     # Check the condition to display explosion when required.
-    if PDy > rbias[0] and PDy < rbias[1] and feedback:
+    if PDy_shift > rbias[0] and PDy_shift < rbias[1] and feedback:
         status = 1  # 1: rewarded, 0: failed
         dc['scores'] = dc['scores'] + 10
         print "  EXPLOSION!  Current score: %d"%(dc['scores'])
@@ -761,8 +769,8 @@ def checkEndpoint(angle, feedback, rbias):
         time.sleep(WAITTIME)
 	status = 0
 
-    # We build a string for saving movement kinematics & reward status
-    dc['logAnswer'] = "%d %.5f %d %d %.5f %.3f %.3f %d"%(dc['curtrial'],PDy,angle,status,amount_shifted,tx,ty,dc['speed'])
+    # IMPORTANT = We build a string for saving movement kinematics & reward status
+    dc['logAnswer'] = "%d %.5f %d %d %.5f %.3f %.3f %d %.3f %.3f %.3f %s %f"%(dc['curtrial'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, VER_SOFT, POSBIAS - NEGBIAS)
 
 
 
@@ -866,7 +874,7 @@ def mainGUI():
     e6 = OptionMenu(topFrame, vardeg, "-45","+45")
     e6.grid(row=2, column=4, columnspan=3, sticky=W, pady=5)
     vardeg.set("-45")      # set default value
-
+    
     # Create buttons ---------------
     myButton1 = Button(bottomFrame, text="START", bg="#0FAF0F", command=clickStart)
     myButton1.grid(row=0, padx = 15)
@@ -912,14 +920,14 @@ def OptionSelectEvent(event):
 
 def clickYes(event):
     global ANSWERFLAG
-    print "Left key pressed to answer FIRST!"
-    dc['answer']=1
+    print "Left key pressed to answer LEFT!"
+    dc['answer']= 'left'
     ANSWERFLAG = 1
 
 def clickNo(event):
     global ANSWERFLAG
-    print "Right key pressed to answer SECOND!"
-    dc['answer']=2
+    print "Right key pressed to answer RIGHT!"
+    dc['answer']= 'right'
     ANSWERFLAG = 1
 
 def contPractice(event):
@@ -1003,7 +1011,7 @@ def showCursorBar(angle, position, color="yellow", barflag=True):
 
 
 
-def showTarget(angle, color="#505050"):
+def showTarget(angle, color="white"):
     """
     Show the target at the given angle painted in the given color.
     """
@@ -1103,8 +1111,6 @@ robot.zeroft()
 print("\n\nPress START or <Enter> key to continue\n")
 
 global traj_display
-global angle
-
 traj_display = None
 
 mainGUI()

@@ -8,6 +8,7 @@
 # - controller 2  : zero_ft
 # - controller 4  : movetopt (move to location)
 # - controller 5  : static_ctl_fade (hold and fade)
+# - controller 8  : trajectory_capture (in null field)
 # - controller 9  : trajectory_reproduce (replay a trajectory loaded into memory)
 # - controller 16 : static_ctl (hold at specified location)
 # - controller 17 : curl field (according to old Tcl code)

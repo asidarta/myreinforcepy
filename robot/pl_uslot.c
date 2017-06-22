@@ -103,29 +103,30 @@ init_slot_fns(void)
 #define sY rob->ft.world.y
 #define sZ rob->ft.world.z
 
-#define fvv_vmax_x         ob->fvv_vmax_x
-#define fvv_vmax_y         ob->fvv_vmax_y
+#define fvv_vmax_x          ob->fvv_vmax_x
+#define fvv_vmax_y          ob->fvv_vmax_y
 
 #define fvv_final_x         ob->fvv_final_x
 #define fvv_final_y         ob->fvv_final_y
 
-#define fvv_trial_phase    ob->fvv_trial_phase
-#define fvv_robot_center_x ob->fvv_robot_center_x
-#define fvv_robot_center_y ob->fvv_robot_center_y
+#define fvv_trial_phase     ob->fvv_trial_phase
+#define fvv_robot_center_x  ob->fvv_robot_center_x
+#define fvv_robot_center_y  ob->fvv_robot_center_y
+#define fvv_vel             ob->fvv_vel
+#define fvv_max_vel         ob->fvv_max_vel
+#define fvv_trial_timer     ob->fvv_trial_timer
+#define fvv_vel_low_timer   ob->fvv_vel_low_timer
 //#define fvv_robot_min_y    ob->fvv_robot_min_y
-#define fvv_vel            ob->fvv_vel
-#define fvv_max_vel        ob->fvv_max_vel
-#define fvv_trial_timer    ob->fvv_trial_timer
-#define fvv_vel_low_timer  ob->fvv_vel_low_timer
 
-#define traj_count         ob->traj_count
-#define traj_n_samps       ob->traj_n_samps
-#define traj_final_x       ob->traj_final_x
-#define traj_final_y       ob->traj_final_y
-#define trajx              ob->trajx
-#define trajy              ob->trajy
-#define replay_damping     ob->replay_damping
-#define replay_stiffness   ob->replay_stiffness
+#define traj_count          ob->traj_count
+#define traj_n_samps        ob->traj_n_samps
+#define traj_final_x        ob->traj_final_x
+#define traj_final_y        ob->traj_final_y
+#define trajx               ob->trajx
+#define trajy               ob->trajy
+#define replay_damping      ob->replay_damping
+#define replay_stiffness    ob->replay_stiffness
+
 
 
 
@@ -491,20 +492,32 @@ static_ctl_fade(u32 id)
 
 void 
 trajectory_capture(u32 id)
-{
-  /*
+{ /*
     This controller captures the positions of the robot while
     letting the subject move freely.
+    At the same time, we also obtain the radial velocity. This is in
+    case the movement isn't in a straight line [update ~ananda,jun22]
   */
   int traj_cnt = traj_count;// cast to unsigned just to be sure
+
+  double dX, dY, dnorm; 
+
   if (traj_count<=TRAJECTORY_BUFFER_SIZE) {
 
     // Capture the current position
     trajx[traj_cnt] = X;
     trajy[traj_cnt] = Y;
-      
     ++traj_count;
   }
+
+  dX  = X - fvv_robot_center_x;
+  dY  = Y - fvv_robot_center_y;
+  dnorm = sqrt(pow(dX,2) + pow(dY,2));   // normalized vector
+
+  // Compute radial velocity w.r.t center position is the summation of
+  // dot product of speed and its unit vector.
+  fvv_vel = vX*dX/dnorm + vY*dY/dnorm;
+
   fX = 0.0;
   fY = 0.0;
   
