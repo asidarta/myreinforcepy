@@ -11,6 +11,9 @@ Revisions: Adding a feature to replay the trajectory while the subject remains p
            Adding a feature to replay lag-2 trajectory too! (May 5)
            Using a constant Y-center position; using a picture as 'Go'-signal (May 17)
            Adding a flag to show that the test is currently active. Bugs fixed. (May 30)
+           Modifying the logfile content with columns header now (Jun 12)
+           Adding a function to compute PD at max velocity (Jun 19)
+           Adding a function for radial velocity (Floris')
 """
 
 
@@ -49,8 +52,8 @@ VER_SOFT    = "WM2"
 YCENTER     = -0.005 # Let's fixed the Y-center position!
 ANSWERFLAG  = 0      # Flag = 1 means subject has responded
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
-TARGETDIST  = 0.16   # move 15 cm from the center position (default!)
-TARGETTHICK = 0.011  # 22 mm target thickness
+TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
+TARGETTHICK = 0.010  # 20 mm target thickness
 START_SIZE  = 0.009  #  9 mm start point radius
 CURSOR_SIZE = 0.003  #  3 mm cursor point radius
 WAITTIME    = 0.75   # 750 msec general wait or delay time 
@@ -206,15 +209,16 @@ def enterStart(event):
         wingui.delete("traj")
 
 
+    # Only when filenum = 0 we run familiarization trials for a straightahead direction. 
+    # Once set, we're ready for the main or actual test (filenum > 0).
     if dc["filenum"] == 0:
         prepareCanvas()       # Prepare drawing canvas objects
-        # Only when filenum = 0; familiarization trials for a straightahead direction
         print("\nEntering Practice Block now.........\n")
         runPractice()   
     else:
         prepareCanvas()       # Prepare drawing canvas objects
         print("\nEntering Test Block now.........\n")
-        runBlock()   # Once set, we're ready for the main loop (actual test!)
+        runBlock()
 
     dc['session'] = 1 if(dc['filenum'] < 7) else 2
     #If we change number of blocks per session WE NEED TO CHANGE THIS !!!
@@ -241,6 +245,7 @@ def read_design_file(mpath):
 
 def runPractice():
     global keepPrac
+    global angle
     x,y = robot.rshm('x'),robot.rshm('y')
     showCursorBar(0, (x,y), "yellow", 0)
 
@@ -368,14 +373,26 @@ def runBlock():
     # Now start logging robot data: post, vel, force, trial_phase; 11 columns
     robot.start_log("%s.dat"%dc['logname'],11)
 
+    # ---------------- RUNNING FOR EACH TRIAL IN THE BLOCK ------------------
     for each_trial in range(1,ntrial+1):
         dc['curtrial'] = each_trial
-        # For running each trial of a block up to the end of ntrial....
+
+        # David St-Amand added this:
+        if dc['task'] in ("motor_pre"): 
+             dc['david'] = each_trial 
+        elif dc['filenum'] < 7:
+	     dc['david'] = NTRIAL_TRAIN*(dc["filenum"]-2) + NTRIAL_MOTOR + each_trial
+	elif dc['filenum'] > 7:
+	     dc['david'] = NTRIAL_TRAIN*(dc["filenum"]-8) + NTRIAL_MOTOR + each_trial
+	else:
+	     dc['david'] = 0
+        
         print("\nNew Round %i ----------------------------------------------"%each_trial)
          
-        to_target(angle,fdback,rbias) # Reaching out to target
-        return_toStart(triallag)      # Moving back to center
+        to_target(angle,fdback,rbias) # Part 1: Reaching out to target!!
+        return_toStart(triallag)      # Part 2: Moving back to center!!
         saveLog()                     # Finally, save the logged data!             
+    # ----------------------------------------------------------------------
 
     #print dc['bbias']
     print("\n[Note:] Subject's average bias: %.5f"%np.mean(dc['bbias']))
@@ -390,11 +407,12 @@ def runBlock():
 
 
 def to_target(angle, fdback=0, rbias=[0,0]):
-    """ This handles the whole trial segment when subject moves to hidden target 
+    """ Part 1: This handles the whole trial segment when subject moves to hidden target 
     It formally takes 3 inputs: angle, whether you want to show feedback (reward), and 
     maximum negbias and posbias to receive feedback. By default, feedback is not shown.
     """
     dc['subjx']= 0;  dc['subjy']= 0
+    vmax = 0  # maximum velocity of the movement
 
     # (1) Wait at center or home position first before giving the go-ahead signal.
     win.itemconfig("start",fill="white")
@@ -420,19 +438,26 @@ def to_target(angle, fdback=0, rbias=[0,0]):
     	#print("Distance from center position= %f"%(subjd))
 
         vx, vy = robot.rshm('fsoft_xvel'), robot.rshm('fsoft_yvel')
-        vtot = math.sqrt(vx**2+vy**2)
+        vtot = math.sqrt(vx**2 + vy**2)
+        #print("Original: %f , Floris': %f"%(vtot,robot.rshm('fvv_vel')))
         #print(robot.rshm('fvv_trial_phase'))
         samsung.update()
+
+        # [Jun19] Ananda added this to get x,y positions during the maximum velocity...
+        if vmax < vtot: 
+           vmax = vtot
+           kinmax()
             
         # (3) When the hand was towards the center (start), check if the subject is 
         # holding still inside the start position.
         if robot.rshm('fvv_trial_phase')==1:  
             if dc["subjd"]< START_SIZE and vtot < 0.01:
                 #win.itemconfig("start", fill="green")
-                golabel.place(x=850,y=100)   
+                golabel.place(x=850,y=100)   # Show the "Go" signal here.......
                 wingui.itemconfig("rob_pos",fill="yellow")
                 master.update()
-                robot.start_capture()   # Start capturing trajectory now!  
+                robot.start_capture()   # Start capturing trajectory (for a later replay!)  
+
             # (4) If more or less stationary in the start position, check if the subject 
             # has left the start position. Timer to compute movement speed begins. 
             elif dc["subjd"] > 0.01:
@@ -440,17 +465,17 @@ def to_target(angle, fdback=0, rbias=[0,0]):
                 robot.wshm('fvv_trial_phase', 2)
                 golabel.place(x=-100,y=-100)   
 
-        # (4) If the subject has reached the the target, check if the subject has moved 
+        # (5) If the subject has reached the the target, check if the subject has moved 
         # sufficiently far AND is coming to a stop.   
         elif robot.rshm('fvv_trial_phase')==2:
-            if dc["subjd"] > 0.8*TARGETDIST and vtot < 0.05:
+            if dc["subjd"] > 0.8*TARGETDIST and robot.rshm('fvv_vel') < 0.03:
                 #If yes, hold the position and compute movement speed.     
                 robot.wshm('fvv_trial_phase', 3)
                 robot.stay() # This automatically stops capturing the trajectory!
                 master.update()
                 dc['speed'] = 1000*(time.time() - start_time)
                 print("  Movement duration = %.1f msec"%(dc['speed']))
-                filter_traj() # Filter the captured trajectory!
+                filter_traj()   # Filter the captured trajectory (when stop capturing!)
 
             if (time.time()-start_time) > 8:
                 master.update()
@@ -458,12 +483,12 @@ def to_target(angle, fdback=0, rbias=[0,0]):
                 time.sleep(0.1)
                 
         elif robot.rshm('fvv_trial_phase')==3:
-            # (5) Once reached the target, check end-point accuracy
+            # (6) Once reached the target, check end-point accuracy
             checkEndpoint(angle, fdback, rbias)
             master.update()
             reach_target = True  # To quit while-loop!
         
-            # (6) Ready to move back. Remove hand position cursor, make start circle white. 
+            # (7) Ready to move back. Remove hand position cursor, make start circle white. 
             win.coords("hand",*[0,0,0,0])
             win.itemconfig("hand",fill="black")
             win.coords("handbar",*[0,0,0,0])
@@ -478,7 +503,7 @@ def return_toStart(triallag):
     on whether the current block is training block, and current trial is a WM test trial.
     """
     
-    if "most.recent.traj" in dc:
+    if "most.recent.traj" in dc: ############################
 	#print("Drawing previous trajectory")
 	# Draw the trajectory, the most recent one!
 	trajectory = dc["most.recent.traj"]
@@ -492,7 +517,6 @@ def return_toStart(triallag):
 
         # draw a new line with a tag...
     	traj_display = wingui.create_line(*coords,fill="green",width=3,tag="traj")
-
 
 
     global nsince_last_test
@@ -521,12 +545,12 @@ def return_toStart(triallag):
        time.sleep(0.5)
        replay_traj(True)
             
-       # (7) Wait for subject's response, then go back to the center position!
+       # (8) Wait for subject's response, then go back to the center position!
        RT = doAnswer()
        goToCenter(MOVE_SPEED*0.5)
        nsince_last_test = 0
  
-    else: # (8) Return to the center immediately if NOT a replay or NOT a training block.
+    else: # (9) Return to the center immediately if NOT a replay or NOT a training block.
        nsince_last_test = nsince_last_test + 1
        #print nsince_last_test
        goToCenter(MOVE_SPEED)
@@ -536,6 +560,18 @@ def return_toStart(triallag):
     dc['logAnswer'] = "%s %d %s %s %s %d %d\n"%(dc['logAnswer'],triallag,dc['ref'],dc['answer'],dc['task'],RT,ROT_MAG)
  
             
+
+# This function computes the PD at the max velocity during movement! [Jun19]
+def kinmax():
+    dc['subjxmax'], dc['subjymax'] = robot.rshm('x'),robot.rshm('y')
+    global angle  
+
+    # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
+    # The return values are in the robot coordinates
+    trot  = rotate([(dc['subjxmax'], dc['subjymax'])], (dc['cx'],dc['cy']), -angle)
+    PDy   = trot[0][0]-dc['cx']
+    dc['PDmaxv'] = PDy
+    #print "PD at maximum velocity %f"% PDy
 
                 
 # Function save logfile and mkdir if needed
@@ -548,7 +584,7 @@ def saveLog(header = False):
             log_file.write(dc['logAnswer'])  # Save every trial as text line
         else:
             print("Creating logfile header.....")
-            log_file.write("%s\n"%("Trial_number PDy angle boom amount_shifted x y speed second_bias first_bias PDy_shifted version reward_width lag true_answer part_answer task WM_RT rot_angle"))
+            log_file.write("%s\n"%("Trial_block trial PDy angle boom amount_shifted x y speed second_bias first_bias PDy_shifted version reward_width PDvmax lag ref_answer subj_answer task WM_RT rot_angle"))
 
 
 def doAnswer():
@@ -631,13 +667,13 @@ def replay_traj(rotate_flag = True):
 
 
 
-def p_test(nn):  # nn = number of trials since the last test trial
+def p_test(nn):  # nn = number of trials since the last WM test trial
     if   nn==0: return 0
     elif nn==1: return 0
-    elif nn==2: return 0.2
-    elif nn==3: return 0.4
-    elif nn==4: return 0.6
-    else: return 0.8
+    elif nn==2: return 0#.2
+    elif nn==3: return 0#.4
+    elif nn==4: return 0#.6
+    else: return 0#0.8
 
 
 def velocity_check(x,y):
@@ -748,17 +784,20 @@ def checkEndpoint(angle, feedback, rbias):
     # to both training and post_test.
     if dc['task'] in ("training", "motor_post"): 
         amount_shifted = BIAS_SHIFT + bbias.get()
-        PDy_shift =  amount_shifted - PDy
+        PDy_shift =  PDy - amount_shifted
         print ("  Reward zone has shifted for %f"%(BIAS_SHIFT + bbias.get()))
     else:
         PDy_shift =  PDy
         amount_shifted = 0
 
+    dc['PDend'] = PDy_shift
+
     # Add deviation value to a list
-    print "Lateral deviation = %f" % PDy_shift
+    print "PD at maximum velocity  = %f" % dc['PDmaxv']
+    print "PD at movement endpoint = %f" % PDy_shift
     dc['bbias'].append(PDy)
 
-    # Check the condition to display explosion when required.
+    # Show explosion? Check the condition to display explosion when required.
     if PDy_shift > rbias[0] and PDy_shift < rbias[1] and feedback:
         status = 1  # 1: rewarded, 0: failed
         dc['scores'] = dc['scores'] + 10
@@ -770,7 +809,7 @@ def checkEndpoint(angle, feedback, rbias):
 	status = 0
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status
-    dc['logAnswer'] = "%d %.5f %d %d %.5f %.3f %.3f %d %.3f %.3f %.3f %s %f"%(dc['curtrial'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, VER_SOFT, POSBIAS - NEGBIAS)
+    dc['logAnswer'] = "%d %d %.5f %d %d %.5f %.5f %.5f %d %.5f %.5f %.5f %s %f %.5f"%(dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, VER_SOFT, POSBIAS - NEGBIAS, dc['PDmaxv'])
 
 
 
@@ -1082,7 +1121,9 @@ def showImage(name, px=w/2, py=h/2, delay=1.0):
 
 def GoSignal(name="go_signal.gif",px=-100,py=-100):
     """ Updated: May 20, this creates an image for the subject to start moving!"""
-    global golabel
+ 
+    global golabel  # so we can access it from elsewhere!
+ 
     go_signal = PhotoImage(file=mypwd + "/pictures/" +name)
     golabel = Label(win, bg="black", image=go_signal)
     golabel.image = go_signal # keep a reference!
@@ -1090,13 +1131,15 @@ def GoSignal(name="go_signal.gif",px=-100,py=-100):
     samsung.update()
 
 
-
-master.bind('<Return>', enterStart)
+master.bind('<Return>', enterStart)   # If user presses ENTER then go to [enterStart]
 master.bind('<Left>'  , clickYes)
 master.bind('<Right>' , clickNo)
 master.bind('<Escape>', contPractice)
 
 os.system("clear")
+
+
+######### This is the entry point when you launch the code ################
 
 robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")
