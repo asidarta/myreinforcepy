@@ -178,6 +178,7 @@ def enterStart(event):
     dc['scores']    = 0    # have to reset the score to 0 for each run!
     dc['curtrial']  = 0    # initialize current test trial
     dc['subjd']     = 0    # initialize robot distance from the center of start position
+    dc['david']     = 0    # ?
 
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
@@ -273,29 +274,32 @@ def runPractice():
     showTarget(angle)
 
     print("\n--- Practice stage-2: Move towards target bar\n")
-    keepPrac = True
     dc['task'] = "motor_pre"
     triallag = 1
+    #keepPrac = True
     #playInstruct(2)
-    while keepPrac:
+    #while keepPrac:
+    for each_trial in range(1,20):
         # This is the point where subject starts to move to the target
         to_target(angle)    
         # Go back to center and continue to the next trial.
         return_toStart(triallag)
+        each_trial = each_trial + 1
 
     #----------------------------------------------------------------
     robot.stay()
     keepPrac = True
     print("\n--- Practice stage-3: Exploring the space\n")
-    print("\n###  Press <Esc> to continue...")
+    print("\n###  Press <Esc> after giving the instruction...")
     while keepPrac:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 sec
 
     #playInstruct(3)
-    keepPrac = True
-    while keepPrac:
+    #keepPrac = True
+    #while keepPrac:
+    for each_trial in range(1,15):
         # This is the point where subject starts to move to the target
         to_target(angle)    
         # Go back to center and continue to the next trial.
@@ -305,17 +309,18 @@ def runPractice():
     robot.stay()
     keepPrac = True
     print("\n--- Practice stage-4: Training with feedback\n")
-    print("\n###  Press <Esc> to continue...")
+    print("\n###  Press <Esc> after giving the instruction...")
     while keepPrac:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 sec
         
-    keepPrac = True
+    #keepPrac = True
     fdback = 1
     rbias  = [-0.01,0.01]   # You asked me to make it bigger so that easier to get explo!
     #playInstruct(4)
-    while keepPrac:
+    #while keepPrac:
+    for each_trial in range(1,15):
         to_target(angle,fdback,rbias)    
         return_toStart(triallag)
     
@@ -323,19 +328,21 @@ def runPractice():
     keepPrac = True
     robot.stay()
     print("\n--- Practice stage-5: Training, feedback, and WM Test\n")
-    print("\n###  Press <Esc> to continue...")
+    print("\n###  Press <Esc> after giving the instruction...")
     while keepPrac:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 sec
 
-    keepPrac = True
+    #keepPrac = True
     dc['task'] = "training"
     fdback = 1
     rbias  = [-0.01,0.01]
     triallag = 1  # Just test lag-1
+
     #playInstruct(5)
-    while keepPrac:
+    #while keepPrac:
+    for each_trial in range(1,20):
         # This is the point where subject starts to move to the target....
         to_target(angle,fdback,rbias)    
         # Go back to center and continue to the next trial.
@@ -545,12 +552,12 @@ def return_toStart(triallag):
        time.sleep(0.5)
        replay_traj(True)
             
-       # (8) Wait for subject's response, then go back to the center position!
+       # (7) Wait for subject's response, then go back to the center position!
        RT = doAnswer()
        goToCenter(MOVE_SPEED*0.5)
        nsince_last_test = 0
  
-    else: # (9) Return to the center immediately if NOT a replay or NOT a training block.
+    else: # (8) Return to the center immediately if NOT a replay or NOT a training block.
        nsince_last_test = nsince_last_test + 1
        #print nsince_last_test
        goToCenter(MOVE_SPEED)
