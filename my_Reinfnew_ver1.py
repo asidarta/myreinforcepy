@@ -11,9 +11,10 @@ Revisions: Adding a feature to replay the trajectory while the subject remains p
            Adding a feature to replay lag-2 trajectory too! (May 5)
            Using a constant Y-center position; using a picture as 'Go'-signal (May 17)
            Adding a flag to show that the test is currently active. Bugs fixed. (May 30)
+           Revising the code to contain the latest features that version_2 has (Jul 10)
 
-NOTE = We have reviewed the paradigm according to the latest discussion with David. In the improved
-version, subjects to indicate LEFT or RIGHT only, instead of FIRST or SECOND.
+NOTE = We have reviewed the paradigm according to the latest discussion with David. In the 
+improved version, subjects to indicate LEFT or RIGHT only, instead of FIRST or SECOND.
 """
 
 
@@ -39,14 +40,16 @@ w, h   = 1920,1080   # Samsung LCD size
 nsince_last_test = 0
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-NEGBIAS = -0.006   # 12 mm reward zone width
-POSBIAS = +0.006   # 12 mm reward zone width
+NEGBIAS = -0.006   # 12 mm reward zone width  ?????? Make it bigger!
+POSBIAS = +0.006   # 12 mm reward zone width  ?????? Make it bigger!
 VELMIN  = 1200
 VELMAX  = 800
 NTRIAL_MOTOR = 20
 NTRIAL_TRAIN = 50
+ROT_MAG = 5        # Value of rotation angle for WM Test.
 
 # Global definition for other constants
+VER_SOFT    = "ver1_2dirs"
 YCENTER     = -0.005 # Let's fixed the Y-center position!
 ANSWERFLAG  = 0      # Flag = 1 means subject has responded
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
@@ -215,7 +218,11 @@ def enterStart(event):
     else:
         prepareCanvas()       # Prepare drawing canvas objects
         print("\nEntering Test Block now.........\n")
-        runBlock()   # Once set, we're ready for the main loop (actual test!)
+        # Once set, we're ready for the actual test!
+        runBlock()
+    
+    dc['session'] = 1 if(dc['filenum'] < 7) else 2
+    #If we change number of blocks per session WE NEED TO CHANGE THIS !!!
 
 
 
@@ -233,11 +240,12 @@ def read_design_file(mpath):
         return 0
 
 
-
 # Run only for the first time: familiarization trials with instructions. 
 # This simple block is executed in sequence...
+
 def runPractice():
     global keepPrac
+    global angle
     x,y = robot.rshm('x'),robot.rshm('y')
     showCursorBar(0, (x,y), "yellow", 0)
 
@@ -279,7 +287,7 @@ def runPractice():
     robot.stay()
     keepPrac = True
     print("\n--- Practice stage-3: Exploring the space\n")
-    print("\n###  Press <Esc> to continue...")
+    print("\n###  Press <Esc> after giving the instruction...")
     while keepPrac:
         master.update_idletasks()
         master.update()
@@ -297,7 +305,7 @@ def runPractice():
     robot.stay()
     keepPrac = True
     print("\n--- Practice stage-4: Training with feedback\n")
-    print("\n###  Press <Esc> to continue...")
+    print("\n###  Press <Esc> after giving the instruction...")
     while keepPrac:
         master.update_idletasks()
         master.update()
@@ -315,7 +323,7 @@ def runPractice():
     keepPrac = True
     robot.stay()
     print("\n--- Practice stage-5: Training, feedback, and WM Test\n")
-    print("\n###  Press <Esc> to continue...")
+    print("\n###  Press <Esc> after giving the instruction...")
     while keepPrac:
         master.update_idletasks()
         master.update()
@@ -351,6 +359,8 @@ def runBlock():
     global angle
     angle = vardeg.get()
 
+    saveLog(True)    # Write column headers in the logfile (Jun9) 
+    
     # Set other experiment design parameters. Look how I check for two string options!!
     rbias  = [NEGBIAS,POSBIAS]
     fdback = 0 if dc['task'] in ("motor_pre", "motor_post") else 1
@@ -390,6 +400,7 @@ def to_target(angle, fdback=0, rbias=[0,0]):
     maximum negbias and posbias to receive feedback. By default, feedback is not shown.
     """
     dc['subjx']= 0;  dc['subjy']= 0
+    vmax = 0  # maximum velocity of the movement
 
     # (1) Wait at center or home position first before giving the go-ahead signal.
     win.itemconfig("start",fill="white")
@@ -415,10 +426,15 @@ def to_target(angle, fdback=0, rbias=[0,0]):
     	#print("Distance from center position= %f"%(subjd))
 
         vx, vy = robot.rshm('fsoft_xvel'), robot.rshm('fsoft_yvel')
-        vtot = math.sqrt(vx**2+vy**2)
+        vtot = math.sqrt(vx**2 + vy**2)
         #print(robot.rshm('fvv_trial_phase'))
         samsung.update()
-            
+
+        # [Jun19] Ananda added this to get x,y positions during the maximum velocity...
+        if vmax < vtot: 
+           vmax = vtot
+           kinmax()
+       
         # (3) When the hand was towards the center (start), check if the subject is 
         # holding still inside the start position.
         if robot.rshm('fvv_trial_phase')==1:  
@@ -534,18 +550,36 @@ def return_toStart(triallag):
        dc['ref'], dc['answer'], RT = 'no_wm','no_wm',0
 
     # (9) We concatenate the logfile content with the WM test response
-    dc['logAnswer'] = "%s %d %d %d %s %d\n"%(dc['logAnswer'],triallag,dc['ref'],dc['answer'],dc['task'],RT)	    
+    dc['logAnswer'] = "%s %d %s %s %s %d %d\n"%(dc['logAnswer'],triallag,dc['ref'],dc['answer'],dc['task'],RT,ROT_MAG)	    
  
             
 
+# This function computes the PD at the max velocity during movement! [Jun19]
+def kinmax():
+    dc['subjxmax'], dc['subjymax'] = robot.rshm('x'),robot.rshm('y')
+    global angle  
+
+    # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
+    # The return values are in the robot coordinates
+    trot  = rotate([(dc['subjxmax'], dc['subjymax'])], (dc['cx'],dc['cy']), -angle)
+    PDy   = trot[0][0]-dc['cx']
+    dc['PDmaxv'] = PDy
+    #print "PD at maximum velocity %f"% PDy
+
                 
-# Function save logfile and mkdir if needed
-def saveLog():
+# This function saves logfile and mkdir if needed. 
+# Column header is written only at the beginning! Change/add the field names if required.
+def saveLog(header = False):
     print("Saving trial log.....")   
     # Making a new directory has been moved to getCenter()...
     #if not os.path.exists(dc['logpath']): os.makedirs(dc['logpath'])
     with open("%s.txt"%dc['logname'],'aw') as log_file:
-        log_file.write(dc['logAnswer'])  # Save every trial as text line
+        if (header == False):
+            print("Saving trial log.....")
+            log_file.write(dc['logAnswer'])  # Save every trial as text line
+        else:
+            print("Creating logfile header.....")
+            log_file.write("%s\n"%("Trial_block PDy angle boom amount_shifted x y speed second_bias first_bias PDy_shifted version reward_width PDvmax lag ref_answer subj_answer task WM_RT rot_angle"))
 
 
 def doAnswer():
@@ -591,8 +625,9 @@ def replay_traj(rotate_flag = False):
 
     if rotate_flag:
         print("ROTATING the trajectory in robot coordinates!")
-        # Flip coin whether +10deg or -10deg rotation 
-        rot_angle = random.choice([-1,1])*10
+        # Flip coin whether +10deg or -10deg rotation.
+        # Update: rotation angle is reduced to 5 deg, and defined as a constant.
+        rot_angle = random.choice([-1,1])*ROT_MAG
         traj_rot  = rotate(traj, (dc['cx'],dc['cy']), rot_angle)
         # The rotated trajectory is in the list of tuples....
         #print traj_rot[150]
@@ -743,17 +778,21 @@ def checkEndpoint(angle, feedback, rbias):
     # to both training and post_test.
     if dc['task'] in ("training", "motor_post"): 
         amount_shifted = BIAS_SHIFT + bbias.get()
-        PDy =  PDy - amount_shifted
+        PDy_shift =  PDy - amount_shifted
         print ("  Reward zone has shifted for %f"%(BIAS_SHIFT + bbias.get()))
     else:
+        PDy_shift =  PDy
         amount_shifted = 0
 
-    print "Lateral deviation = %f" %PDy
-    # Add deviation value to a list 
+    dc['PDend'] = PDy_shift
+
+    # Add deviation value to a list
+    print "PD at maximum velocity  = %f" % dc['PDmaxv']
+    print "PD at movement endpoint = %f" % PDy_shift
     dc['bbias'].append(PDy)
 
-    # Check the condition to display explosion when required.
-    if PDy > rbias[0] and PDy < rbias[1] and feedback:
+    # Show explosion? Check the condition to display explosion when required.
+    if PDy_shift > rbias[0] and PDy_shift < rbias[1] and feedback:
         status = 1  # 1: rewarded, 0: failed
         dc['scores'] = dc['scores'] + 10
         print "  EXPLOSION!  Current score: %d"%(dc['scores'])
@@ -763,8 +802,10 @@ def checkEndpoint(angle, feedback, rbias):
         time.sleep(WAITTIME)
 	status = 0
 
-    # We build a string for saving movement kinematics & reward status
-    dc['logAnswer'] = "%d %.5f %d %d %.5f %.3f %.3f %d"%(dc['curtrial'],PDy,angle,status,amount_shifted,tx,ty,dc['speed'])
+    # We build a string for saving movement kinematics & reward status--revised!
+    #dc['logAnswer'] = "%d %.5f %d %d %.5f %.3f %.3f %d"%(dc['curtrial'],PDy,angle,status,amount_shifted,tx,ty,dc['speed'])
+    dc['logAnswer'] = "%d %.5f %d %d %.5f %.5f %.5f %d %.5f %.5f %.5f %s %f %.5f"%(dc['curtrial'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, VER_SOFT, POSBIAS - NEGBIAS, dc['PDmaxv'])
+
 
 
 
@@ -1005,7 +1046,7 @@ def showCursorBar(angle, position, color="yellow", barflag=True):
 
 
 
-def showTarget(angle, color="#505050"):
+def showTarget(angle, color="#656565"):
     """
     Show the target at the given angle painted in the given color.
     """

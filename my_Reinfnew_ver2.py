@@ -14,6 +14,7 @@ Revisions: Adding a feature to replay the trajectory while the subject remains p
            Modifying the logfile content with columns header now (Jun 12)
            Adding a function to compute PD at max velocity (Jun 19)
            Adding a function for radial velocity (Floris')
+           Motor-pre changed to 30 trials, compute angular deviation, bias changed to 15 mm (Jul 10)
 """
 
 
@@ -43,12 +44,12 @@ NEGBIAS = -0.006   # 12 mm reward zone width  ?????? Make it bigger!
 POSBIAS = +0.006   # 12 mm reward zone width  ?????? Make it bigger!
 VELMIN  = 1200
 VELMAX  = 800
-NTRIAL_MOTOR = 20
+NTRIAL_MOTOR = 30  # Originally set to 20
 NTRIAL_TRAIN = 50
-ROT_MAG = 5       # Value of rotation angle for WM Test.
+ROT_MAG = 5        # Value of rotation angle for WM Test.
 
 # Global definition for other constants
-VER_SOFT    = "WM2"
+VER_SOFT    = "WM3"
 YCENTER     = -0.005 # Let's fixed the Y-center position!
 ANSWERFLAG  = 0      # Flag = 1 means subject has responded
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
@@ -74,7 +75,10 @@ random.shuffle(test_angle)
 # This is to shift the reward zone. It's a +/-10 mm shift from the subject's baseline bias.
 # It's also dependent on the reward zone width such that the reward chance is ~25%
 # during the first training block.
-BIAS_SHIFT = random.choice([-1,1])*(POSBIAS-NEGBIAS)
+#BIAS_SHIFT = random.choice([-1,1])*(POSBIAS-NEGBIAS)
+
+# Update (Jul 10) = shift is fixed at 15 cm.
+BIAS_SHIFT = 0.015
 
 
 # Now this is contained in fvv_trial_phase variable...
@@ -219,6 +223,7 @@ def enterStart(event):
     else:
         prepareCanvas()       # Prepare drawing canvas objects
         print("\nEntering Test Block now.........\n")
+        # Once set, we're ready for the actual test!
         runBlock()
 
     dc['session'] = 1 if(dc['filenum'] < 7) else 2
@@ -317,7 +322,7 @@ def runPractice():
         
     #keepPrac = True
     fdback = 1
-    rbias  = [-0.01,0.01]   # You asked me to make it bigger so that easier to get explo!
+    rbias  = [-0.01,0.01]
     #playInstruct(4)
     #while keepPrac:
     for each_trial in range(1,15):
@@ -366,7 +371,7 @@ def runBlock():
     global angle
     angle = vardeg.get()
 
-    saveLog(True)    # Add this to save the column headers (Jun9)   
+    saveLog(True)    # Write column headers in the logfile (Jun9)   
 
     # Set other experiment design parameters. Look how I check for two string options!!
     rbias  = [NEGBIAS,POSBIAS]
@@ -578,10 +583,14 @@ def kinmax():
     trot  = rotate([(dc['subjxmax'], dc['subjymax'])], (dc['cx'],dc['cy']), -angle)
     PDy   = trot[0][0]-dc['cx']
     dc['PDmaxv'] = PDy
-    #print "PD at maximum velocity %f"% PDy
+    ## Compute angular deviation. Note: Should use trot as well!
+    dc['Theta_maxv'] = math.atan2(trot[0][1],trot[0][0])*180/math.pi - (angle+90)  # w.r.t to ideal direction
+    #print "PDy at maximum velocity %f"% PDy
+    #print "Angle at maximum velocity %f"% dc['Theta_maxv']
 
                 
-# Function save logfile and mkdir if needed
+# This function saves logfile and mkdir if needed. 
+# Column header is written only at the beginning! Change/add the field names if required.
 def saveLog(header = False):
     # Making a new directory has been moved to getCenter()...
     #if not os.path.exists(dc['logpath']): os.makedirs(dc['logpath'])
@@ -799,9 +808,10 @@ def checkEndpoint(angle, feedback, rbias):
 
     dc['PDend'] = PDy_shift
 
-    # Add deviation value to a list
-    print "PD at maximum velocity  = %f" % dc['PDmaxv']
-    print "PD at movement endpoint = %f" % PDy_shift
+    # Add deviation value to a list;;;;; Ananda added angular deviation (Jul 10).
+    print "Theta at maximum velocity = %f" % dc['Theta_maxv'] 
+    print "PD at maximum velocity    = %f" % dc['PDmaxv']
+    print "PD at movement endpoint   = %f" % PDy_shift
     dc['bbias'].append(PDy)
 
     # Show explosion? Check the condition to display explosion when required.
@@ -815,7 +825,7 @@ def checkEndpoint(angle, feedback, rbias):
         time.sleep(WAITTIME)
 	status = 0
 
-    # IMPORTANT = We build a string for saving movement kinematics & reward status
+    # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
     dc['logAnswer'] = "%d %d %.5f %d %d %.5f %.5f %.5f %d %.5f %.5f %.5f %s %f %.5f"%(dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, VER_SOFT, POSBIAS - NEGBIAS, dc['PDmaxv'])
 
 
@@ -1057,7 +1067,7 @@ def showCursorBar(angle, position, color="yellow", barflag=True):
 
 
 
-def showTarget(angle, color="white"):
+def showTarget(angle, color="#656565"):
     """
     Show the target at the given angle painted in the given color.
     """
