@@ -73,8 +73,7 @@ SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
 #random.shuffle(test_angle)     ###### This is no longer used!
 
 # This is to shift the reward zone. It's a +/-10 mm shift from the subject's baseline bias.
-# It's also dependent on the reward zone width such that the reward chance is ~25%
-# during the first training block.
+# It depends on the reward width setup such that the chance is ~25% of the baseline trials.
 BIAS_SHIFT = random.choice([-1,1])*(POSBIAS-NEGBIAS)
 
 
@@ -625,8 +624,7 @@ def replay_traj(rotate_flag = False):
 
     if rotate_flag:
         print("ROTATING the trajectory in robot coordinates!")
-        # Flip coin whether +10deg or -10deg rotation.
-        # Update: rotation angle is reduced to 5 deg, and defined as a constant.
+        # Flip coin whether +5deg or -5deg rotation. Convention: Positive angle is CCW (to the left)! 
         rot_angle = random.choice([-1,1])*ROT_MAG
         traj_rot  = rotate(traj, (dc['cx'],dc['cy']), rot_angle)
         # The rotated trajectory is in the list of tuples....
@@ -635,7 +633,7 @@ def replay_traj(rotate_flag = False):
         #print traj_rot[230]
         
         # Push the clean trajectory back to the robot memory for replaying 
-        # (and set the final positions apprdc['speed']opriately)
+        # (and set the final positions appropriately)
         robot.prepare_replay(traj_rot)
 
     else:
@@ -771,6 +769,8 @@ def checkEndpoint(angle, feedback, rbias):
     # The return values are in the robot coordinates
     tx,ty = dc['subjx'], dc['subjy']
     trot  = rotate([(tx,ty)], (dc['cx'],dc['cy']), -angle)
+
+    # CONVENTION: -ve value means error to the left (CCW), +ve means error to the right (CW).
     PDy   = trot[0][0]-dc['cx']
 
     # The reward zone has been shifted based on the baseline bias. The new PDy
@@ -786,7 +786,7 @@ def checkEndpoint(angle, feedback, rbias):
 
     dc['PDend'] = PDy_shift
 
-    # Add deviation value to a list
+    # Add deviation at maxvel to a list
     print "PD at maximum velocity  = %f" % dc['PDmaxv']
     print "PD at movement endpoint = %f" % PDy_shift
     dc['bbias'].append(PDy)
@@ -834,16 +834,14 @@ playAudio = BooleanVar()
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
 
-#coeff = "9.909798e+02,1.883453e+03,3.135285e+02,2.782356e+02,1.866139e+03,2.024665e+02".split(',')
 coeff = "9.645104e+02,1.884507e+03,5.187605e+01,2.876710e+02,1.863987e+03,4.349610e+01".split(',')
-## WARNING: I think this calib data is wrong... but how come???
 
 
 def rob_to_screen(robx, roby):
-    ### TODO: NEEDS TO BE FIXED. This is off for the center position
     px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
     py = float(coeff[3]) + float(coeff[4])*roby #- float(coeff[5])*robx*roby
     return (px,py)
+    # Sometimes calib is inaccurate. Hand cursor is off-center. Why?!
 
 
 # For canvas on the main GUI to draw subject's trajectory
@@ -1071,14 +1069,17 @@ def showTarget(angle, color="#656565"):
 def rotate(coords, pivot, angle):
     """ Rotate the point(x,y) in coords around a pivot point by the given angle. Coordinates
     to be rotated and pivot points will be converted to complex numbers.
-    Arguments
+    Arguments:
         coords: list of tuples (x,y)  <- important!! 
         pivot : pivot point of reference
         angle : angle, in degree
-        rob_coord = True
 
-    output:
-        returns a list of rotated tuples in the ROBOT coordinates by default."""
+    Output:
+        returns a list of rotated tuples in the ROBOT coordinates by default.
+
+    Convention: 
+        +ve angle means CCW, rotation to the left.
+        -ve angle means CW, rotation to the right    """
 
     pivot = complex(pivot[0],pivot[1])
     # Convert rotation angle into radians first

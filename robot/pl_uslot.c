@@ -461,8 +461,8 @@ static_ctl_fade(u32 id)
      using the multiplier fvv_force_fade that goes to
      zero. */
   
-  ob->fvv_force_fade *= 0.99; 
-  f64 fade  = ob->fvv_force_fade; // between 1 (full force) and 0 (no force)
+  ob->fvv_force_fade *= 0.99;       // Note: should we use 0.99 or 0.991??
+  f64 fade  = ob->fvv_force_fade;   // between 1 (full force) and 0 (no force)
   //fade = fade*0.9;                // Exponentially decay force
 
   f64 pcurx = ob->plg_p1x;
@@ -475,7 +475,7 @@ static_ctl_fade(u32 id)
   ob->fvv_workspace_enter = (dist>distance_cutoff);
 
 
-  fX= fade* ((-stiff*(X-pcurx) - damp*(vX)));
+  fX= fade* ((-stiff*(X-pcurx) - damp*(vX)));  // larger fade value indicates slower fading!
   fY= fade* ((-stiff*(Y-pcury) - damp*(vY)));
 #ifdef dyn_comp 
   dynamics_compensation(fX,fY,3,1.0);
