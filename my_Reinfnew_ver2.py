@@ -45,8 +45,8 @@ NEGBIAS = -0.005   # 10 mm reward zone width
 POSBIAS = +0.005   # 10 mm reward zone width
 VELMIN  = 1200
 VELMAX  = 800
-NTRIAL_MOTOR = 10  # Originally set to 20...
-NTRIAL_TRAIN = 20  # Originally set to 50...
+NTRIAL_MOTOR = 30  # Originally set to 20...
+NTRIAL_TRAIN = 60  # Originally set to 50...
 ROT_MAG = 5        # Value of rotation angle for WM Test.
 
 # Global definition for other constants
@@ -89,10 +89,19 @@ dc["active"] = False  ## Adding this flag to show that the test is currently act
 # Also, reward zone width changes over blocks. Note: option values has to be accessed by *
 
 # Update (July 24 based on Skype call with Ananda, David*2 and Floris)
-BIAS_SHIFT = 0.04
-ZONE_WIDTH = [ 0.0175,
-               0.013,
-               0.01 ]
+BIAS_SHIFT_pd = 0.04
+ZONE_WIDTH_pd = [ 0.0175,
+                  0.013,
+                  0.01 ]
+
+# Update (July 24; we are changing to use the point of maximum velocity as a reference
+# for calculating reward, so we need to recompute what the logical amount of shift and target
+# widths will be)
+BIAS_SHIFT_deg = 0.04
+ZONE_WIDTH_deg = [ 0.0175,
+                   0.013,
+                   0.01 ]
+
 
 
 
@@ -175,19 +184,20 @@ def enterStart(event):
         print("##Error## Subject ID and/or file numbers are empty or file number is not a digit!")
         return
 
-    dc["active"]    = True # flag stating we are currently running
-    dc['task']      = varopt.get().split()[0]  # task type
-    dc['lag']       = varopt.get().split()[2]  # lag type
-    dc["subjid"]    = subjid.get()
-    dc["filenum"]   = int(filenum.get())
-    dc['logfileID'] = "%s%i"%(dc["subjid"],dc["filenum"])
-    dc['logpath']   = '%s/data/%s_data/'%(mypwd,dc["subjid"])
-    dc['logname']   = '%smotorLog_%s'%(dc['logpath'],dc['logfileID'])
-    dc['bbias']     = []   # deviations during baseline to compute bias
-    dc['scores']    = 0    # have to reset the score to 0 for each run!
-    dc['curtrial']  = 0    # initialize current test trial
-    dc['subjd']     = 0    # initialize robot distance from the center of start position
-    dc['david']     = 0    # ?
+    dc["active"]             = True # flag stating we are currently running
+    dc['task']               = varopt.get().split()[0]  # task type
+    dc['lag']                = varopt.get().split()[2]  # lag type
+    dc["subjid"]             = subjid.get()
+    dc["filenum"]            = int(filenum.get())
+    dc['logfileID']          = "%s%i"%(dc["subjid"],dc["filenum"])
+    dc['logpath']            = '%s/data/%s_data/'%(mypwd,dc["subjid"])
+    dc['logname']            = '%smotorLog_%s'%(dc['logpath'],dc['logfileID'])
+    dc['bbias']              = []   # deviations during baseline to compute bias
+    dc['angle_maxv_history'] = [] # list that we will use as a history of previous maxv_angles (not shifted!)
+    dc['scores']             = 0    # have to reset the score to 0 for each run!
+    dc['curtrial']           = 0    # initialize current test trial
+    dc['subjd']              = 0    # initialize robot distance from the center of start position
+    dc['david']              = 0    # ?
 
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
@@ -220,6 +230,30 @@ def enterStart(event):
 
     dc['session'] = 1 if(dc['filenum'] < 7) else 2
     #If we change number of blocks per session WE NEED TO CHANGE THIS !!!
+
+    # Compute how much we shift the baseline for this particular subject
+    # Shift the reward zone based on the baseline bias. The new PDy would be w.r.t the 
+    # shifted reward zone. This shift applies to both training and post_test.
+    # [Jul 10] Crucial update: the shift is set to be always towards the actual 45 deg. 
+    #          That is, if the bias sign is -ve, the shift should be +ve.
+    if dc['task'] in ("training", "motor_post"): 
+        dc["baseline_pd_shift"] = bbias.get() - np.sign(bbias.get())*BIAS_SHIFT_pd
+        print ("  Reward zone has shifted for %f"%(BIAS_SHIFT_pd + bbias.get()))
+    else:
+        dc["baseline_pd_shift"] = 0
+    
+
+    # Compute how much the angle is shifted for this particular subject.
+    # Note that we will shift towards 45 degrees.
+    # TODO: This needs to be made accurate (currently it uses code that
+    # is for shifting a PD but we need to make sure that the numbers
+    # actually make sense, etc.)
+    if dc['task'] in ("training", "motor_post"): 
+        dc["baseline_angle_shift"] = bbias.get() - np.sign(bbias.get())*BIAS_SHIFT_deg
+        print ("  Reward zone has shifted for %f"%(dc["baseline_angle_shift"]))
+    else:
+        dc["baseline_angle_shift"] = 0
+
 
     # Only when filenum = 0 we run familiarization trials for a straightahead direction. 
     # Once set, we're ready for the main or actual test (filenum > 0).
@@ -389,6 +423,7 @@ def runBlock():
     #rbias  = [NEGBIAS,POSBIAS]
     tempbias = varwidth.get()
     rbias  = [-tempbias/2, tempbias/2]   ## [Jul 12]
+    dc["maxv_target_width_deg"] = varwidth.get() ## TODO: the experimenter selects the target width from a dropdown box
 
     fdback = 0 if dc['task'] in ("motor_pre", "motor_post") else 1
     ntrial = NTRIAL_MOTOR if dc['task'] in ("motor_pre", "motor_post") else NTRIAL_TRAIN
@@ -422,8 +457,10 @@ def runBlock():
     # ----------------------------------------------------------------------
 
     #print dc['bbias']
-    print("\n[Note:] Subject's MEAN bias:   %.5f DON'T USE THIS"%np.mean(dc['bbias']))
-    print("\n[Note:] Subject's MEDIAN bias: %.5f"%np.median(dc['bbias']))
+    #print("\n[Note:] Subject's MEAN raw bias:     %.5f DON'T USE THIS"%np.mean(dc['bbias']))
+    #print("\n[Note:] Subject's MEDIAN raw bias:   %.5f DON't USE THIS"%np.median(dc['bbias']))
+    print("\n[Note:] Subject's MEAN   angle at vmax: %.5f deg (DON'T USE THIS)"%np.mean  (dc['angle_maxv_history']))
+    print("\n[Note:] Subject's MEDIAN angle at vmax: %.5f deg"                 %np.median(dc['angle_maxv_history']))
     print("\n\n#### Test has ended! You may continue or QUIT now.....")
     
     robot.stop_log()   # Stop recording robot data now!
@@ -473,8 +510,9 @@ def to_target(angle, fdback=0, rbias=[0,0]):
 
         # [Jun19] Ananda added this to get x,y positions during the maximum velocity...
         if vmax < vtot: 
-           vmax = vtot
-           kinmax()
+            vmax = vtot
+            dc['subjxmax'], dc['subjymax'] = x,y # update the x,y position of the subject at maximum velocity
+            # kinmax()
             
         # (3) When the hand was towards the center (start), check if the subject is 
         # holding still inside the start position.
@@ -590,17 +628,21 @@ def return_toStart(triallag):
 
 # This function computes the PD at the max velocity during movement! [Jun19]
 def kinmax():
-    dc['subjxmax'], dc['subjymax'] = robot.rshm('x'),robot.rshm('y')
-    global angle  
+    """ This function is deprecated, courtesy of FVV July; the reason is
+    that we need to know only the (x,y) at maximum velocity; the rest, angles
+    etc we can calculate after the trial has ended. """
+    #dc['subjxmax'], dc['subjymax'] = robot.rshm('x'),robot.rshm('y')
+    #global angle  
 
     # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
     # The return values are in the robot coordinates
-    trot  = rotate([(dc['subjxmax'], dc['subjymax'])], (dc['cx'],dc['cy']), -angle)
-    PDy   = trot[0][0]-dc['cx']
-    dc['PDmaxv'] = PDy
+    #trotx,troty  = rotate([(dc['subjxmax'], dc['subjymax'])], (dc['cx'],dc['cy']), -angle)[0]
+    #PDy   = trotx-dc['cx']
+    #dc['PDmaxv'] = PDy
 
     ## Compute angular deviation. Note: Should use trot as well!
-    dc['Theta_maxv'] = math.atan2(trot[0][1],trot[0][0])*180/math.pi - (angle+90)  # w.r.t to ideal direction
+    #dc['Theta_maxv'] = math.atan2(troty,trotx)*180/math.pi - (angle+90)
+    #dc['Theta_maxv'] = math.atan2(troty,trotx)*180/math.pi - (angle+90)  # w.r.t to ideal direction
     #print "PDy at maximum velocity %f"% PDy
     #print "Angle at maximum velocity %f"% dc['Theta_maxv']
 
@@ -617,7 +659,7 @@ def saveLog(header = False):
             log_file.write(dc['logAnswer'])  # Save every trial as text line
         else:
             print("Creating logfile header.....")
-            log_file.write("%s\n"%("Trial_block,trial,PDy,angle,boom,amount_shifted,tx,ty,speed,first_bias,second_bias,PDy_shifted,PDvmax,Theta_vmax,version,reward_width,session, lag,ref_answer,subj_answer,task,WM_RT,rot_angle"))
+            log_file.write("%s\n"%("Trial_block,trial,PDy,angle,boom,amount_shifted,tx,ty,speed,first_bias,second_bias,PDy_shifted,PDvmax,angle_maxv_deg,angle_maxv_shift,maxv_target_width_deg,version,reward_width,session, lag,ref_answer,subj_answer,task,WM_RT,rot_angle"))
 
 
 def doAnswer():
@@ -810,44 +852,50 @@ def checkEndpoint(angle, feedback, rbias):
     # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
     # The return values are in the robot coordinates. Both tx and ty are the endpoint coordinate,
     tx,ty = dc['subjx'], dc['subjy']
-    trot  = rotate([(tx,ty)], (dc['cx'],dc['cy']), -angle)
+    trotx,troty  = rotate([(tx,ty)], (dc['cx'],dc['cy']), -angle)[0]
 
-    # CONVENTION: -ve value means error to the left (CCW), +ve means error to the right (CW).
-    PDy   = trot[0][0]-dc['cx']
+    # CONVENTION: -ve value means error to the left (CCW), +ve means error to the right (CW).\
+    # PDy is computed as the lateral deviation at the movement endpoint
+    PDy   = trotx-dc['cx']
 
-    # Shift the reward zone based on the baseline bias. The new PDy would be w.r.t the 
-    # shifted reward zone. This shift applies to both training and post_test.
-    # [Jul 10] Crucial update: the shift is set to be always towards the actual 45 deg. 
-    #          That is, if the bias sign is -ve, the shift should be +ve.
-    if dc['task'] in ("training", "motor_post"): 
-        amount_shifted = bbias.get() - np.sign(bbias.get())*BIAS_SHIFT   ## 
-        PDy_shift =  PDy - amount_shifted
-        print ("  Reward zone has shifted for %f"%(BIAS_SHIFT + bbias.get()))
-    else:
-        PDy_shift =  PDy
-        amount_shifted = 0
+    # Compute the angle at maximum velocity, with zero being straight towards the
+    # target line and with positive angles meaning counter-clockwise deviation.
+    # So notice here no shift is being applied yet; this is a fairly raw angle.
+    dc['angle_maxv_deg'] = math.atan2(troty,trotx)*180/math.pi - 90
+
+    # Now shift the angle so that zero means the center of the target area.
+    dc['angle_maxv_shift'] = dc['angle_maxv_deg'] - dc['baseline_angle_shift']
+
+    # Compute the PDy value after applying the baseline shift (if applicable)
+    PDy_shift =  PDy - dc["baseline_pd_shift"]
 
     dc['PDend'] = PDy_shift
 
     # Ananda added PDmaxv and angular deviation.
-    print "Theta at max velocity   = %f" % dc['Theta_maxv'] 
-    print "PD at max velocity      = %f" % dc['PDmaxv']
-    print "PD at endpoint, shifted = %f" % PDy_shift
+    print "Theta at max velocity          = %f deg" % dc['angle_maxv_deg']
+    print "Theta at max velocity, shifted = %f deg" % dc['angle_maxv_shift']
+    print "PD at max velocity             = %f" % dc['PDmaxv']
+    print "PD at endpoint, shifted        = %f" % PDy_shift
     dc['bbias'].append(PDy)
+    dc['angle_maxv_history'].append(dc['angle_maxv_deg']) # keep this angle for future reference
+    
 
     # Show explosion? Check the condition to display explosion when required.
-    if PDy_shift > rbias[0] and PDy_shift < rbias[1] and feedback:
+    if feedback and abs(dc["angle_maxv_shift"])<dc["maxv_target_width_deg"]:
+        # This trial got rewarded!
+        #if dc['angle_maxv_shift'] > rbias[0] and dc['Theta_maxv_shift']< rbias[1] and feedback:
         status = 1  # 1: rewarded, 0: failed
         dc['scores'] = dc['scores'] + 10
         print "  EXPLOSION!  Current score: %d"%(dc['scores'])
         showImage("Explosion_final.gif",960,140,0.5)  
         showImage("score" + str(dc['scores']) + ".gif",965,260,0.5)
-    else: 
+    else:
+        # This trial does not get rewarded
         time.sleep(WAITTIME)
 	status = 0
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
-    dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d"%(dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, dc['PDmaxv'], dc['Theta_maxv'], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
+    dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d"%(dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
 
 
 
@@ -950,9 +998,10 @@ def mainGUI():
     e6 = OptionMenu(topFrame, vardeg, *test_angle)
     e6.grid(row=2, column=4, columnspan=3, sticky=W, pady=8)
     vardeg.set("-45")      # set default value
-    
-    Label(topFrame, text="Reward Width: ").grid(row=3, sticky=E)
-    e7 = OptionMenu(topFrame, varwidth, *(ZONE_WIDTH))   # use * to get the items
+
+    # Make a menu where the experimenter can select the reward zone width.
+    Label(topFrame, text="Reward Width (deg): ").grid(row=3, sticky=E)
+    e7 = OptionMenu(topFrame, varwidth, *(ZONE_WIDTH_deg))   # use * to get the items
     e7.grid(row=3, column=1, columnspan=2, sticky=W)
     varwidth.set(0.010)    # set default value
 
