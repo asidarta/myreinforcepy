@@ -4,3 +4,4 @@ data/
 exper_design/
 mySimple.py
 my_ExperDesign.py
+*.pyc
