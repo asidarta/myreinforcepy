@@ -71,7 +71,7 @@ SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
 # If lag-1 is selected as 45deg, then lag-2 should be -45 deg. This random selection 
 # is executed once, at the very first when the code is run.
 test_angle = [-45,45]
-random.shuffle(test_angle)
+# random.shuffle(test_angle)
 
 # Now this is contained in fvv_trial_phase variable...
 #dc['post']= 0 # (0: hand moving to start-not ready, 
@@ -87,10 +87,12 @@ dc["active"] = False  ## Adding this flag to show that the test is currently act
 
 # Update (Jul 12) = shift is fixed at 18 cm. The shift should be towards the actual 45 deg.
 # Also, reward zone width changes over blocks. Note: option values has to be accessed by *
-BIAS_SHIFT = 0.018
-ZONE_WIDTH = [ 0.018,
-               0.014,
-               0.010 ]
+
+# Update (July 24 based on Skype call with Ananda, David*2 and Floris)
+BIAS_SHIFT = 0.04
+ZONE_WIDTH = [ 0.0175,
+               0.013,
+               0.01 ]
 
 
 
@@ -420,7 +422,8 @@ def runBlock():
     # ----------------------------------------------------------------------
 
     #print dc['bbias']
-    print("\n[Note:] Subject's average bias: %.5f"%np.mean(dc['bbias']))
+    print("\n[Note:] Subject's MEAN bias:   %.5f DON'T USE THIS"%np.mean(dc['bbias']))
+    print("\n[Note:] Subject's MEDIAN bias: %.5f"%np.median(dc['bbias']))
     print("\n\n#### Test has ended! You may continue or QUIT now.....")
     
     robot.stop_log()   # Stop recording robot data now!
