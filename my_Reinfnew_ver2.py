@@ -293,6 +293,9 @@ def runPractice():
     x,y = robot.rshm('x'),robot.rshm('y')
     showCursorBar(0, (x,y), "yellow", 0)
 
+    # Setting this to NAN so that we don't get an error when we write the log file
+    dc["maxv_target_width_deg"] = np.nan
+
     #----------------------------------------------------------------
     print("\n--- Practice stage-1: Yellow cursor, occluded arm")
     #playInstruct(1)
