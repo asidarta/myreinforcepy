@@ -868,7 +868,8 @@ def checkEndpoint(angle, feedback, rbias):
     # target line and with positive angles meaning counter-clockwise deviation.
     # So notice here no shift is being applied yet; this is a fairly raw angle.
     #dx,dy = dc["subjxmax"],dc["subjymax"] # compute the vector from the center to the vmax point
-    dc['angle_maxv_deg'] = math.atan2(dc["subjymax"],dc["subjxmax"])*180/math.pi - (90 - angle) # compute the angle of that vector in radians
+    dc['angle_maxv_deg'] = math.atan2(dc["subjymax"],dc["subjxmax"])*180/math.pi - 90 - angle # compute the angle of that vector in radians
+    if dc["angle_maxv_deg"]<-180: dc["angle_maxv_deg"]+=360
 
     # Now shift the angle so that zero means the center of the target area.
     dc['angle_maxv_shift'] = dc['angle_maxv_deg'] - dc['baseline_angle_shift']
