@@ -498,7 +498,7 @@ def to_target(angle, fdback=0, rbias=[0,0]):
         x,y = robot.rshm('x'),robot.rshm('y')
         dc['subjx'], dc['subjy'] = x, y
         # Compute current distance from the center/start--robot coordinate! 
-    	dc['subjd'] = math.sqrt((x-dc['cx'])**2 + (y-dc['cy'])**2)
+    	dc['subjd'] = math.sqrt((x-dc['cx'])**2 + (y-dc['cy']) **2)
         showCursorBar(angle, (x,y))
     	#print("Distance from center position= %f"%(subjd))
 
@@ -511,8 +511,7 @@ def to_target(angle, fdback=0, rbias=[0,0]):
         # [Jun19] Ananda added this to get x,y positions during the maximum velocity...
         if vmax < vtot: 
             vmax = vtot
-            dc['subjxmax'], dc['subjymax'] = x,y # update the x,y position of the subject at maximum velocity
-            # kinmax()
+            dc['subjxmax'], dc['subjymax'] = x-dc["cx"],y-dc["cy"] # update the x,y position of the subject at maximum velocity, RELATIVE TO THE CENTER
             
         # (3) When the hand was towards the center (start), check if the subject is 
         # holding still inside the start position.
@@ -850,8 +849,10 @@ def checkEndpoint(angle, feedback, rbias):
     """
 
     print("  Checking end-position inside target zone?")
+    
+    # Now let's first look at the subject movement endpoint.
     # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
-    # The return values are in the robot coordinates. Both tx and ty are the endpoint coordinate,
+    # The return values are in the robot coordinates. Both tx and ty are the endpoint coordinate.
     tx,ty = dc['subjx'], dc['subjy']
     trotx,troty  = rotate([(tx,ty)], (dc['cx'],dc['cy']), -angle)[0]
 
@@ -859,14 +860,15 @@ def checkEndpoint(angle, feedback, rbias):
     # PDy is computed as the lateral deviation at the movement endpoint
     PDy   = trotx-dc['cx']
 
+    tzx,tzy = tx-dc["cx"],ty-dc["cy"] # translate the subject endpoint so that it is relative to the starting point
 
     # Now we compute the maximum velocity point and rotate it in a similar way as
     # above, so that straight ahead means towards the target.
     # Compute the angle at maximum velocity, with zero being straight towards the
     # target line and with positive angles meaning counter-clockwise deviation.
     # So notice here no shift is being applied yet; this is a fairly raw angle.
-    dx,dy = dc["subjxmax"]-dc["cx"],dc["subjymax"]-dc["cy"] # compute the vector from the center to the vmax point
-    dc['angle_maxv_deg'] = math.atan2(dy,dx)*180/math.pi - (90 - angle) # compute the angle of that vector in radians
+    #dx,dy = dc["subjxmax"],dc["subjymax"] # compute the vector from the center to the vmax point
+    dc['angle_maxv_deg'] = math.atan2(dc["subjymax"],dc["subjxmax"])*180/math.pi - (90 - angle) # compute the angle of that vector in radians
 
     # Now shift the angle so that zero means the center of the target area.
     dc['angle_maxv_shift'] = dc['angle_maxv_deg'] - dc['baseline_angle_shift']
@@ -901,7 +903,7 @@ def checkEndpoint(angle, feedback, rbias):
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
     dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d"% \
-                      (dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
+                      (dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tzx, tzy, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
 
 
 
@@ -1103,7 +1105,12 @@ def prepareCanvas():
     win.create_oval   ([0,0,1,1], width=1, fill="black", tag="targetcir")
     win.create_oval   ([0,0,1,1], width=1, fill="black", tag="hand")
     samsung.update()   # Update the canvas to let changes take effect
- 
+
+    # Also create a target in the experimenter's GUI
+    wingui.create_polygon([0,0,0,1,1,1,0,0], fill="black", width = 10, tag="target")
+
+
+    
 
 def showCursorBar(angle, position, color="yellow", barflag=True):
     """ Draw the cursor at the current position if still inside the start circle and draw 
@@ -1166,6 +1173,13 @@ def showTarget(angle, color="#656565"):
     #print rot_item      
     win.coords("target", *scr_tuple)     # Edit coordinates of the canvas object
     win.itemconfig("target",fill=color)  # Show the target by updating its fill color.
+
+    # Now also show the target bar in the experimenter's GUI screen
+    gui_xy    = [rob_to_gui(x,y) for x,y in rot_item]
+    gui_tuple = tuple([ item for sublist in gui_xy for item in sublist ])
+    wingui.coords    ("target", *gui_tuple)     # Edit coordinates of the canvas object
+    wingui.itemconfig("target",fill=color)  # Show the target by updating its fill color.
+    
     samsung.update()         # Update the canvas to let changes take effect
 
 
