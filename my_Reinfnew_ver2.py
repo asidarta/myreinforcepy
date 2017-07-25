@@ -900,7 +900,8 @@ def checkEndpoint(angle, feedback, rbias):
 	status = 0
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
-    dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d"%(dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
+    dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d"% \
+                      (dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tx, ty, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
 
 
 
