@@ -198,7 +198,8 @@ def enterStart(event):
     dc['curtrial']           = 0    # initialize current test trial
     dc['subjd']              = 0    # initialize robot distance from the center of start position
     dc['david']              = 0    # ?
-
+    dc["PDmaxv"]             = np.nan
+    
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
         print ("File already exists: %s.txt"%dc["logname"] )
