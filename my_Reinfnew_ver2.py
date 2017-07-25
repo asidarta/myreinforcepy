@@ -660,7 +660,7 @@ def saveLog(header = False):
             log_file.write(dc['logAnswer'])  # Save every trial as text line
         else:
             print("Creating logfile header.....")
-            log_file.write("%s\n"%("Trial_block,trial,PDy,angle,boom,amount_shifted,tx,ty,speed,first_bias,second_bias,PDy_shifted,PDvmax,angle_maxv_deg,angle_maxv_shift,maxv_target_width_deg,x_maxv,y_maxv,version,reward_width,session,lag,ref_answer,subj_answer,task,WM_RT,rot_angle"))
+            log_file.write("%s\n"%("Trial_block,trial,PDy,target_line_angle,boom,amount_shifted_deg,tx,ty,speed,first_bias,PDy_shifted,PDvmax,angle_maxv_deg,angle_maxv_shift,maxv_target_width_deg,x_maxv,y_maxv,version,reward_width,session,lag,ref_answer,subj_answer,task,WM_RT,rot_angle"))
 
 
 def doAnswer():
@@ -904,8 +904,8 @@ def checkEndpoint(angle, feedback, rbias):
 	status = 0
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
-    dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d"% \
-                      (dc['curtrial'], dc['david'], PDy, angle, status, amount_shifted, tzx, tzy, dc['speed'], bbias.get(), BIAS_SHIFT, PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
+    dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d"% \
+                      (dc['curtrial'], dc['david'], PDy, angle, status, dc['baseline_angle_shift'], tzx, tzy, dc['speed'], bbias.get(), PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
 
 
 
