@@ -89,7 +89,7 @@ dc["active"] = False  ## Adding this flag to show that the test is currently act
 # Also, reward zone width changes over blocks. Note: option values has to be accessed by *
 
 # Update (July 24 based on Skype call with Ananda, David*2 and Floris)
-BIAS_SHIFT_pd = 0.04
+BIAS_SHIFT_pd = 0.03
 ZONE_WIDTH_pd = [ 0.0175,
                   0.013,
                   0.01 ]
@@ -97,10 +97,12 @@ ZONE_WIDTH_pd = [ 0.0175,
 # Update (July 24; we are changing to use the point of maximum velocity as a reference
 # for calculating reward, so we need to recompute what the logical amount of shift and target
 # widths will be)
-BIAS_SHIFT_deg = math.atan(BIAS_SHIFT_pd/0.15)*57.2958
-ZONE_WIDTH_deg = [math.atan(ZONE_WIDTH_pd[0]/0.15)*57.2958,
-		math.atan(ZONE_WIDTH_pd[1]/0.15)*57.2958,
-		math.atan(ZONE_WIDTH_pd[2]/0.15)*57.2958]
+BIAS_SHIFT_deg = 11.31
+# math.atan(BIAS_SHIFT_pd/0.15)*57.2958
+ZONE_WIDTH_deg = [6.65,
+		  4.95,
+                  3.81
+                  ]
 
 
 
