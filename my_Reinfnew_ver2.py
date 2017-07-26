@@ -45,8 +45,8 @@ NEGBIAS = -0.005   # 10 mm reward zone width
 POSBIAS = +0.005   # 10 mm reward zone width
 VELMIN  = 1200
 VELMAX  = 800
-NTRIAL_MOTOR = 10  # Originally set to 20...
-NTRIAL_TRAIN = 10  # Originally set to 50...
+NTRIAL_MOTOR = 30  # Originally set to 20...
+NTRIAL_TRAIN = 60  # Originally set to 50...
 ROT_MAG = 5        # Value of rotation angle for WM Test.
 
 # Global definition for other constants
@@ -327,7 +327,7 @@ def runPractice():
     #repeatFlag = True
     #playInstruct(2)
     #while repeatFlag:
-    for each_trial in range(1,20):
+    for each_trial in range(1,5):
         # This is the point where subject starts to move to the target
         to_target(angle)    
         # Go back to center and continue to the next trial.
@@ -347,7 +347,7 @@ def runPractice():
     #playInstruct(3)
     #repeatFlag = True
     #while repeatFlag:
-    for each_trial in range(1,15):
+    for each_trial in range(1,5):
         # This is the point where subject starts to move to the target
         to_target(angle)    
         # Go back to center and continue to the next trial.
