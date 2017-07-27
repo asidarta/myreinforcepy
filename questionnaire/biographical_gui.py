@@ -306,11 +306,13 @@ class Main(wx.Frame):
 
             self.addExplanation(panel,vbox,"Please fill out this questionnaire completely.\nScroll down to see additional questions.\n\nThank you in advance for your time.")
 
+            self.addMultiLineText(panel,vbox,"You were asked to reach perpendicularly to the target line.\nIs the instruction confusing?",size=600)
+            
             self.addMultiLineText(panel,vbox,"How difficult was it to get explosions?",size=600)
 
-            self.addMultiLineText(panel,vbox,"Was it easier or harder when the target bar \n(i.e. the grey line that you had to reach to) \nwas on the left or right side?",size=600)
+            self.addMultiLineText(panel,vbox,"Was it easier or harder when the target bar (i.e. the grey line that you had to reach to) \nwas on the left or right side?",size=600)
 
-            self.addMultiLineText(panel,vbox,"Did it feel like the target area was at 45 degrees? \nWas this different between moving to the left or right side?",size=600)
+            self.addMultiLineText(panel,vbox,"When you get an explosion, did it indeed feel like you moved exactly perpendicularly\nto the target bar? Or did it feel like you were moving not exactly perpendicularly?\nWas this different between moving to the left or right side?",size=600)
             
             self.addMultiLineText(panel,vbox,"Do you have any other observations that you would like to tell us about?",size=600)
 
