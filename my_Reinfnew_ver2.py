@@ -365,11 +365,11 @@ def runPractice():
         
     #repeatFlag = True
     fdback = 1
-    rbias  = [-0.01,0.01]
+    dc["maxv_target_width_deg"] = 7.59 # degrees; practice target width corresponding to 2 cm (at 15 cm reach length)
     #playInstruct(4)
     #while repeatFlag:
     for each_trial in range(1,15):
-        to_target(angle,fdback,rbias)    
+        to_target(angle,fdback)
         return_toStart(triallag)
     
     #----------------------------------------------------------------
@@ -385,14 +385,13 @@ def runPractice():
     #repeatFlag = True
     dc['task'] = "training"
     fdback = 1
-    rbias  = [-0.01,0.01]
     triallag = 1  # Just test lag-1
 
     #playInstruct(5)
     #while repeatFlag:
     for each_trial in range(1,20):
         # This is the point where subject starts to move to the target....
-        to_target(angle,fdback,rbias)    
+        to_target(angle,fdback)
         # Go back to center and continue to the next trial.
         return_toStart(triallag)
 
@@ -400,6 +399,8 @@ def runPractice():
     dc["active"] = False # flag stating we are currently running
 
 
+
+    
 
 ## Update [May9,2017]: I decided to move away from the exper_design used in the legacy Tcl
 ## code. Here, I'll declare those at the beginning of the code as constants!
@@ -429,7 +430,7 @@ def runBlock():
     #rbias  = [NEGBIAS,POSBIAS]
     tempbias = varwidth.get()
     rbias  = [-tempbias/2, tempbias/2]   ## [Jul 12]
-    dc["maxv_target_width_deg"] = varwidth.get() ## TODO: the experimenter selects the target width from a dropdown box
+    dc["maxv_target_width_deg"] = varwidth.get() ## the experimenter selects the target width from a dropdown box
 
     fdback = 0 if dc['task'] in ("motor_pre", "motor_post") else 1
     ntrial = NTRIAL_MOTOR if dc['task'] in ("motor_pre", "motor_post") else NTRIAL_TRAIN
@@ -555,7 +556,7 @@ def to_target(angle, fdback=0, rbias=[0,0]):
                 
         elif robot.rshm('fvv_trial_phase')==3:
             # (6) Once reached the target, check end-point accuracy
-            checkEndpoint(angle, fdback, rbias)
+            checkEndpoint(angle, fdback)
             master.update()
             reach_target = True  # To quit while-loop!
         
@@ -846,7 +847,7 @@ def smooth(x):
 
 
 
-def checkEndpoint(angle, feedback, rbias):
+def checkEndpoint(angle, feedback):
     """ The function checks whether the movement endpoint lands inside 
     a reward zone. The width of the reward zone is defined by the rbias that 
     consists of negbias and posbias w.r.t to the target center.
@@ -895,7 +896,7 @@ def checkEndpoint(angle, feedback, rbias):
     
 
     # Show explosion? Check the condition to display explosion when required.
-    if feedback and abs(dc["angle_maxv_shift"])<dc["maxv_target_width_deg"]:
+    if feedback and abs(dc["angle_maxv_shift"]*2)<dc["maxv_target_width_deg"]:
         # This trial got rewarded!
         #if dc['angle_maxv_shift'] > rbias[0] and dc['Theta_maxv_shift']< rbias[1] and feedback:
         status = 1  # 1: rewarded, 0: failed
