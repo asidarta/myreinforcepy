@@ -436,15 +436,18 @@ playAudio = BooleanVar()
 
 #caldata = os.popen('./robot/ParseCalData robot/cal_data.txt').read()
 #print caldata.split("\t")
-coeff = "9.645104e+02    1.884507e+03    5.187605e+01    2.876710e+02    1.863987e+03    4.349610e+01 ".split()
+
+coeff = "9.781831e+02,1.838148e+03,4.368059e+02,2.120721e+02,1.827717e+03,3.235548e+02".split(',')
+#coeff = "9.645104e+02    1.884507e+03    5.187605e+01    2.876710e+02    1.863987e+03    4.349610e+01 ".split()
 ## WARNING: THESE COEFFICIENTS ARE ACTUALLY OFF (NEED TO RE-COMPUTE THEM)
 
 
 def rob_to_screen(robx, roby):
-    ### TODO: NEEDS TO BE FIXED. This is off for the center position
-    px = float(coeff[0]) + float(coeff[1])*robx + float(coeff[2])*robx*roby
-    py = float(coeff[3]) + float(coeff[4])*roby + float(coeff[5])*robx*roby
+    px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
+    py = float(coeff[3]) + float(coeff[4])*roby #- float(coeff[5])*robx*roby
     return (px,py)
+    # Changed after the robot moved to a new place.
+
 
 def mainGUI():
     # Create two different frames on the master -----
