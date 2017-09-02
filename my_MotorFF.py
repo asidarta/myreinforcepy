@@ -28,7 +28,7 @@ instruct = True      # play instruction audio file?trial
 w, h   = 1920,1080   # Samsung LCD size
 
 # Global definition of constants
-TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
+TARGETBAR   = True   # Showing target bar?? Set=False to just show the target circle!
 TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
 TARGETTHICK = 0.01   # 20 mm target thickness
 START_SIZE  = 0.009  #  9 mm start point radius
@@ -586,7 +586,8 @@ def showCursorBar(angle, position, color="yellow", barflag=True):
 
 def showTarget(angle, color="white"):
     """
-    Show the target at the given angle painted in the given color.
+    Show the target at the given angle painted in the given color. You can construct both a target circle and
+    a target bar overlayed on the circle.
     """
     # Construct coordinates for target circle in the robot coordinates.
     x1, y1   = dc['cx']-TARGETTHICK, dc['cy']+TARGETDIST-TARGETTHICK

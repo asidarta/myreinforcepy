@@ -39,8 +39,8 @@ w, h   = 1920,1080   # Samsung LCD size
 nsince_last_test = 0
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-NEGBIAS = -0.006   # 12 mm reward zone width  ?????? Make it bigger!
-POSBIAS = +0.006   # 12 mm reward zone width  ?????? Make it bigger!
+NEGBIAS = -0.006   # 12 mm reward zone width, the variable name is legacy from Nicolo!
+POSBIAS = +0.006   # 12 mm reward zone width  ?????? Originally 10 mm, we make it bigger!
 VELMIN  = 1200
 VELMAX  = 800
 NTRIAL_MOTOR = 20
@@ -477,7 +477,8 @@ def to_target(angle, fdback=0, rbias=[0,0]):
                 print("  Movement duration = %.1f msec"%(dc['speed']))
                 filter_traj()   # Filter the captured trajectory (when stop capturing!)
 
-            if (time.time()-start_time) > 8:
+            ## 4sec timeout if cannot/never reach the target
+            if (time.time()-start_time) > 4:
                 master.update()
                 goToCenter(MOVE_SPEED)
                 time.sleep(0.1)

@@ -44,8 +44,8 @@ w, h   = 1920,1080    # Samsung LCD size
 nsince_last_test = 0
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-NEGBIAS = -0.005   # 10 mm reward zone width
-POSBIAS = +0.005   # 10 mm reward zone width
+NEGBIAS = -0.006   # 12 mm reward zone width, the variable name is legacy from Nicolo!
+POSBIAS = +0.006   # 12 mm reward zone width
 VELMIN  = 1200
 VELMAX  = 800
 NTRIAL_MOTOR = 30  # Originally set to 20...
@@ -299,7 +299,7 @@ def runPractice():
     showCursorBar(0, (x,y), "yellow", 0)
 
     # Setting this to NAN so that we don't get an error when we write the log file
-    dc["maxv_target_width_deg"] = np.nan
+    dc["reward_width_deg"] = np.nan
 
     #----------------------------------------------------------------
     print("\n--- Practice stage-1: Yellow cursor, occluded arm")
@@ -368,7 +368,7 @@ def runPractice():
         
     #repeatFlag = True
     fdback = 1
-    dc["maxv_target_width_deg"] = 7.59 # degrees; practice target width corresponding to 2 cm (at 15 cm reach length)
+    dc["reward_width_deg"] = 7.59 # reward width (deg) corresponding to 2 cm (at 15 cm reach length)
     #playInstruct(4)
     #while repeatFlag:
     for each_trial in range(1,15):
@@ -431,9 +431,9 @@ def runBlock():
 
     # Set other experiment design parameters. Look how I check for two string options!!
     #rbias  = [NEGBIAS,POSBIAS]
-    tempbias = varwidth.get()
-    rbias  = [-tempbias/2, tempbias/2]   ## [Jul 12]
-    dc["maxv_target_width_deg"] = varwidth.get() ## the experimenter selects the target width from a dropdown box
+    tempbias = varwidth.get()  ## [Jul 12] this is for different reward width for different training block!
+    rbias  = [-tempbias/2, tempbias/2]
+    dc["reward_width_deg"] = varwidth.get() ## the experimenter selects the target width from a dropdown box
 
     fdback = 0 if dc['task'] in ("motor_pre", "motor_post") else 1
     ntrial = NTRIAL_MOTOR if dc['task'] in ("motor_pre", "motor_post") else NTRIAL_TRAIN
@@ -551,8 +551,9 @@ def to_target(angle, fdback=0, rbias=[0,0]):
                 dc['speed'] = 1000*(time.time() - start_time)
                 print("  Movement duration = %.1f msec"%(dc['speed']))
                 filter_traj()   # Filter the captured trajectory (when stop capturing!)
-
-            if (time.time()-start_time) > 8:
+            
+            ## 4sec timeout if cannot/never reach the target
+            if (time.time()-start_time) > 4:
                 master.update()
                 goToCenter(MOVE_SPEED)
                 time.sleep(0.1)
@@ -851,11 +852,11 @@ def smooth(x):
 
 
 def checkEndpoint(angle, feedback):
-    """ The function checks whether the movement endpoint lands inside 
-    a reward zone. The width of the reward zone is defined by the rbias that 
-    consists of negbias and posbias w.r.t to the target center.
-    Update = To manage 'good' subjects, we shift the target center according to the avg
-    bias during baseline... 
+    """ The function checks whether the movement direction is within the desired angular 
+    range (degree). The reward zone width was originally defined by a neg/pos bias w.r.t the 
+    actual target center. Currently, the width is defined by an angular range. 
+    Additionally, the function WRITES trial information into the logfile.
+
     """
 
     print("  Checking end-position inside target zone?")
@@ -899,7 +900,7 @@ def checkEndpoint(angle, feedback):
     
 
     # Show explosion? Check the condition to display explosion when required.
-    if feedback and abs(dc["angle_maxv_shift"]*2)<dc["maxv_target_width_deg"]:
+    if feedback and abs(dc["angle_maxv_shift"]*2) < dc["reward_width_deg"]:
         # This trial got rewarded!
         #if dc['angle_maxv_shift'] > rbias[0] and dc['Theta_maxv_shift']< rbias[1] and feedback:
         status = 1  # 1: rewarded, 0: failed
@@ -914,8 +915,31 @@ def checkEndpoint(angle, feedback):
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
     dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d"% \
-                      (dc['curtrial'], dc['david'], PDy, angle, status, dc['baseline_angle_shift'], tzx, tzy, dc['speed'], bbias.get(), PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'])
+                      (dc['curtrial'], dc['david'], PDy, angle, status, dc['baseline_angle_shift'], tzx, tzy, dc['speed'], bbias.get(), PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["reward_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS-NEGBIAS, dc['session'])
 
+
+############ Added this explanation because we added too many variables to save!! #############
+#  Trial_block = Trial number in each block
+#  trial = Running trial number for all blocks, starting from block 1
+#  PDy = PD w.r.t actual reference direction (45 deg left or right)
+#  target_line_angle = reference direction (45 deg left or right)
+#  boom = explosion, successfully hit the reward zone
+#  amount_shifted_deg = how far the shifted target center is from the reference direction
+#  tx = movement end-point X coordinate
+#  ty = movement end-point Y coordinate
+#  speed = movement completion time (sec)
+#  first-bias = subject’s baseline bias
+#  PDy_shifted = PD w.r.t the shifted target center (cm)
+#  PDvmax = PD measured at max. velocity (cm)
+#  angle_maxv_deg = Angular deviation at max. velocity (deg)
+#  angle_maxv_shift = Angular deviation at max. velocity w.r.t the shifted target center (deg)
+#  maxv_target_width_deg = width of the reward zone at the max. velocity
+#  x_maxv = X coordinate at maximum velocity
+#  y_maxv = Y coordinate at maximum velocity
+#  version = software revision
+#  reward_width = the width of the reward zone measured at the target bar
+#  session = either session 1 or 2
+#  file = file number, which also coincides with the block number
 
 
 

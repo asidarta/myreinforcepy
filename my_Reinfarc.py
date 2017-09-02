@@ -3,8 +3,14 @@
 """
 Created on Wed Aug 18 15:24:50 2017 @author: ae2010
 
-Revisions: Improved Reinforcement paradigm based on the discussion (Aug 18). Target bar 
-and yellow line are removed. Task is adjusted to be more Reinforcement and sensory WM task!
+Revisions: Improved Reinforcement paradigm based on the discussion (Aug 18). Target bar and yellow line are removed. 
+We use an arc as a reference target that will only be shown during familiarization trials. In the actual trials, no visual 
+inputs will be displayed except the GO signal and the explosion to indicate the desired direction we want. Subjects
+will be asked to explore the wanted direction. Task is adjusted to be more Reinforcement and WM probes trial-by-trial performance!
+
+Revisions : Finalizing the working script (Aug 25)
+            Major clean up, making the code more readable; cleaning unnecessary logfile variables (Aug 29/30)
+
 """
 
 
@@ -28,45 +34,34 @@ w, h   = 1920,1080    # Samsung LCD size
 # Supposed there are up to 4 lags in WM test, we ought to capture the trajectory up to
 # 4 movements prior. We also have a counter how many trials since the last TEST trial.
 nsince_last_test = 0
-
-test_angle = [-45,45]
-dc["active"] = False  ## Adding this flag to show that the test is currently active!!
+test_angle = [-45,45] # Which side are we testing? Left/right?
+dc["active"] = False  # Adding this flag to show that the test is currently active!!
+showFlag     = True   # Show yellow hand cursor position throughout (default: YES)
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-NEGBIAS = -0.005   # 10 mm reward zone width
-POSBIAS = +0.005   # 10 mm reward zone width
-VELMIN  = 1000
-VELMAX  = 600
-NTRIAL_MOTOR = 30  # Originally set to 20... #For post only
-NTRIAL_TRAIN = 60  # Originally set to 50...
-CURTRIAL_SET = 15  # Current trial where we set the target direction during Pre_training
+VER_SOFT = "arc1"
+NTRIAL_MOTOR = 30     # Relevant only for post-test
+NTRIAL_TRAIN = 60     # Training trials with feedback
+CURTRIAL_SET = 15     # Minimum trials before we set the actual target direction during Pre_training
+ROT_MAG = 5           # Value of rotation angle for WM Test.
+INIT_DIR_RANGE = 45   # Range in which participants can get the first explosion during Pre_training
+YCENTER     = -0.005  # Let's fixed the Y-center position!
+ANSWERFLAG  = 0       # Flag = 1 means subject has responded
+TARGETDIST  = 0.15    # move 15 cm from the center position (default!)
+START_SIZE  = 0.008   #  8 mm start point radius
+CURSOR_SIZE = 0.003   #  3 mm cursor point radius
+WAITTIME    = 0.75    # 750 msec general wait or delay time 
+MOVE_SPEED  = 1.1     # duration (in sec) of the robot moving the subject to the center
+FADEWAIT    = 1.0     # fading duration for robot-hold/stay
 
-ROT_MAG = 5        # Value of rotation angle for WM Test.
-INIT_DIR_RANGE = 45 # Range in which participants can get the first explosion during pre_training
-
-# Global definition for other constants
-VER_SOFT    = "arc1"
-YCENTER     = -0.005 # Let's fixed the Y-center position!
-ANSWERFLAG  = 0      # Flag = 1 means subject has responded
-TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
-TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
-TARGETTHICK = 0.010  # 20 mm target thickness
-START_SIZE  = 0.008  #  8 mm start point radius
-CURSOR_SIZE = 0.003  #  3 mm cursor point radius
-WAITTIME    = 0.75   # 750 msec general wait or delay time 
-MOVE_SPEED  = 1.5    # duration (in sec) of the robot moving the subject to the center
-FADEWAIT    = 1.0
+# We dun use bias shift anymore here. Also, reward zone has a fixed 16 mm width (~6 deg).
+dc["reward_width_deg"] = 6   # >> Don't make it too small, too tough!
+ARCEXTENT = 90        # How much the arc will span (degree)
 
 # How big a window to use for smoothing (see tools/smoothing for details about the effects)
 SMOOTHING_WINDOW_SIZE = 9 
 SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
 
-# The new design doesn't use bias shift anymore. Reward zone has a fixed width, 10 mm.
-# math.atan(BIAS_SHIFT_pd/0.15)*57.2958 = 3.81 deg.
-ZONE_WIDTH_deg = 4
-ARCEXTENT = 90     # How much the arc will span (degree)
-
-showFlag = True    # Show cursor throughout space (default: YES)
 
 
 
@@ -147,28 +142,25 @@ def enterStart(event):
     # First, check whether the entry fields have usable text (need subjID, a file number, etc.)
     dc["filenum"] = int(filenum.get())
 
-    #if dc["filenum"] == 0:
-    #    print("\nWARNING: File number should be larger than 0!!")
-    #    return
-
     if not subjid.get() or not filenum.get().isdigit():
         print("##Error## Subject ID and/or file numbers are empty or file number is not a digit!")
         return
 
-    dc["active"]             = True # flag stating we are currently running
-    dc['task']               = varopt.get().split()[0]  # task type
-    dc['lag']                = varopt.get().split()[2]  # lag type
-    dc["subjid"]             = subjid.get()
-    dc['logfileID']          = "%s_%i"%(dc["subjid"],dc["filenum"])
-    dc['logpath']            = '%s/data/%s_data/'%(mypwd,dc["subjid"])
-    dc['logname']            = '%smotorLog_%s'%(dc['logpath'],dc['logfileID'])
-    dc['scores']             = 0    # have to reset the score to 0 for each run!
-    dc['curtrial']           = 0    # initialize current test trial
-    dc['subjd']              = 0    # initialize robot distance from the center of start position
-    dc['david']              = 0    # ?
-    dc["PDmaxv"]             = np.nan
-    dc['target']             = np.nan   # NEW!!! This is the subject's unique direction
-    
+    dc["active"]   = True # flag stating we are currently running
+    dc['task']     = varopt.get().split()[0]  # task type
+    dc['lag']      = varopt.get().split()[2]  # lag type
+    dc["subjid"]   = subjid.get()
+    dc['logfileID']= "%s_%i"%(dc["subjid"],dc["filenum"])
+    dc['logpath']  = '%s/data/%s_data/'%(mypwd,dc["subjid"])
+    dc['logname']  = '%smotorLog_%s'%(dc['logpath'],dc['logfileID'])
+    dc['scores']   = 0    # have to reset the score to 0 for each run!
+    dc['curtrial'] = 0    # initialize current test trial
+    dc['subjd']    = 0    # initialize robot distance from the center of start position
+    dc["PDmaxv"]   = np.nan
+    dc['target']   = np.nan   # NEW!!! This is the subject's unique direction
+    dc['angle']    = vardeg.get()   # Read the current workspace, either left/right
+
+
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
         print ("File already exists: %s.txt"%dc["logname"] )
@@ -182,7 +174,9 @@ def enterStart(event):
     # New subject has been instructed beforehand to place the hand in the center position.
     getCenter()
     # Go to the center position
-    goToCenter(MOVE_SPEED*1.5) 
+    goToCenter(MOVE_SPEED*1.5)
+    # Display the center (start) circle 
+    showStart()
     GoSignal()
 
     global traj_display
@@ -191,8 +185,8 @@ def enterStart(event):
     if traj_display!=None: 
         wingui.delete("traj")
 
-    dc['session'] = 1 if(dc['filenum'] < 7) else 2
-    #If we change number of blocks per session WE NEED TO CHANGE THIS !!!
+    # Note: If we change number of blocks per session WE NEED TO CHANGE THIS!
+    dc['session'] = 1 if(dc['filenum'] < 6) else 2
 
     # The new design doesn't use bias shift anymore. 
     dc["baseline_pd_shift"] = 0  
@@ -231,14 +225,12 @@ def read_design_file(mpath):
 
 def runPractice():
     global repeatFlag
-    global angle
     global showFlag
-    showStart("white")    # Display the center (start) circle 
     x,y = robot.rshm('x'),robot.rshm('y')
     showCursorBar((x,y))
 
     # Setting this to NAN so that we don't get an error when we write the log file
-    dc["maxv_target_width_deg"] = np.nan
+    dc["reward_width_maxv_deg"] = np.nan
 
     #----------------------------------------------------------------
     print("\n--- Practice stage-1: Move towards the target arc")
@@ -251,11 +243,10 @@ def runPractice():
         master.update()
         time.sleep(0.01)  # loop every 10 sec
 
-    angle = vardeg.get()  # Read the current direction, either left/right!! 
-    showTarget(angle)     # Show the target arc at this point
+    showTarget(dc['angle'])     # Show the target arc at this point
 
     # 30 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,30):
+    for each_trial in range(1,1):
         dc['curtrial'] = each_trial
         print("\nNew Round %i ----------------- "%each_trial)
         # This is the point where subject starts to move to the target
@@ -268,8 +259,7 @@ def runPractice():
 
     #----------------------------------------------------------------
     robot.stay()
-    showTarget(angle, "black")  # Don't show the target arc now
-    showStart("black")
+    showTarget(dc['angle'], "black")  # Don't show the target arc now
     showFlag = False
     repeatFlag = True
     print("\n--- Practice stage-2: Occluded arm, yellow cursor off!\n")
@@ -317,7 +307,7 @@ def runPractice():
 #        time.sleep(0.01)  # loop every 10 sec
         
 #    dc['task'] = "pre_train"
-#    dc["maxv_target_width_deg"] = 5 # degrees;
+#    dc["reward_width_maxv_deg"] = 5 # degrees;
     #playInstruct(4)
     #while repeatFlag:
 #    for each_trial in range(1,20):
@@ -355,18 +345,11 @@ def runBlock():
 
     saveLog(True)    # Write column headers in the logfile (Jun9)   
 
-    # Set other experiment design parameters. Look how I check for two string options!!
-    #rbias  = [NEGBIAS,POSBIAS]  >> If you use lateral deviation
-    tempbias = ZONE_WIDTH_deg
-    #rbias  = [-tempbias/2, tempbias/2]
-    dc["maxv_target_width_deg"] = ZONE_WIDTH_deg
-    
     dc['baseline_angle_shift'] = sangle.get()
     
     ntrial = NTRIAL_TRAIN if dc['task'] in ("pre_train", "training") else NTRIAL_MOTOR
     
-    angle = vardeg.get()  # Read the current direction, either left/right!! 
-    showTarget(angle, "black")  # Don't show the target arc now
+    showTarget(dc['angle'], "black")  # Don't show the target arc now
 
     print("Start testing: %s, with angle %d and lag-%d"%(varopt.get(),vardeg.get(),triallag))
     global nsince_last_test
@@ -426,11 +409,9 @@ def to_target():
     """
     dc['subjx']= 0;  dc['subjy']= 0
     vmax = 0  # maximum velocity of the movement
-    global angle
-    angle = vardeg.get()
 
     # (1) Wait at center or home position first before giving the go-ahead signal.
-    #win.itemconfig("start",fill="white")
+    win.itemconfig("start",fill="white")
     reach_target = False
 
     # Release robot_stay() to allow movement in principle, but we haven't given 
@@ -460,7 +441,8 @@ def to_target():
         # [Jun19] Ananda added this to get x,y positions during the maximum velocity...
         if vmax < vtot: 
             vmax = vtot
-            dc['subjxmax'], dc['subjymax'] = x-dc["cx"],y-dc["cy"] # update the x,y position of the subject at maximum velocity, RELATIVE TO THE CENTER
+            # update the x,y position of the subject at maximum velocity, RELATIVE TO THE CENTER
+            dc['subjxmax'], dc['subjymax'] = x-dc["cx"],y-dc["cy"] 
             
         # (3) When the hand was towards the center (start), check if the subject is 
         # holding still inside the start position.
@@ -491,14 +473,15 @@ def to_target():
                 print("  Movement duration = %.1f msec"%(dc['speed']))
                 filter_traj()   # Filter the captured trajectory (when stop capturing!)
 
-            if (time.time()-start_time) > 8:
+            ## 4sec timeout if cannot/never reach the target
+            if (time.time()-start_time) > 4:
                 master.update()
                 goToCenter(MOVE_SPEED)
                 time.sleep(0.1)
                 
         elif robot.rshm('fvv_trial_phase')==3:
             # (6) Once reached the target, check end-point accuracy
-            checkEndpoint(angle)
+            checkEndpoint(dc['angle'])
             master.update()
             reach_target = True  # To quit while-loop!
         
@@ -532,7 +515,6 @@ def return_toStart(triallag):
         # draw a new line with a tag...
     	traj_display = wingui.create_line(*coords,fill="green",width=3,tag="traj")
 
-
     global nsince_last_test
     
     # Check if this is a training block and if the next trial is test trial to replay 
@@ -560,7 +542,7 @@ def return_toStart(triallag):
             
        # (7) Wait for subject's response, then go back to the center position!
        RT = doAnswer()
-       goToCenter(MOVE_SPEED*0.5)
+       goToCenter(MOVE_SPEED*0.8)
        nsince_last_test = 0
  
     else: # (8) Return to the center immediately if NOT a replay or NOT a training block.
@@ -608,7 +590,9 @@ def saveLog(header = False):
             log_file.write(dc['logAnswer'])  # Save every trial as text line
         else:
             print("Creating logfile header.....")
-            log_file.write("%s\n"%("Trial_block,trial,PDy,target_line_angle,boom,amount_shifted_deg,tx,ty,speed,first_bias,PDy_shifted,PDvmax,angle_maxv_deg,angle_maxv_shift,maxv_target_width_deg,x_maxv,y_maxv,version,reward_width,session,file,lag,ref_answer,subj_answer,task,WM_RT,rot_angle"))
+            log_file.write("%s\n"%("Trial_block,direction,boom,amount_shifted_deg,x_end,y_end,"\
+            "speed,x_maxv,y_maxv,PDy,PDy_shifted,PDvmax,angle_maxv_deg,angle_maxv_shift,reward_width_deg,"\
+            "version,session,lag,ref_answer,subj_answer,task,WM_RT,rot_angle"))
 
 
 def doAnswer():
@@ -790,11 +774,12 @@ def smooth(x):
 
 
 def checkEndpoint(angle):
-    """ The function checks whether the movement endpoint lands inside 
-    a reward zone. The width of the reward zone is defined by the rbias that 
-    consists of negbias and posbias w.r.t to the target center.
+    """ The function checks whether the movement direction is within the desired angular 
+    range (degree). This reward zone range is defined w.r.t the actual target center. 
+    Additionally, the function WRITES trial information into the logfile.
+
     """
-    #Let's check whether we are supposed to give feedback or not. If during pre or post, do not give any! 
+    # Let's check whether we are supposed to give feedback or not. 
     feedback = 0 if dc['task'] in ("pre_train","motor_post") else 1
     print("  Checking end-position inside target zone?")
     
@@ -808,7 +793,7 @@ def checkEndpoint(angle):
     # PDy is computed as the lateral deviation at the movement endpoint
     PDy   = trotx-dc['cx']
 
-    tzx,tzy = tx-dc["cx"],ty-dc["cy"] # translate the subject endpoint so that it is relative to the starting point
+    X_end,Y_end = tx-dc["cx"],ty-dc["cy"] # translate the subject endpoint so that it is relative to the starting point
 
     # Now we compute the maximum velocity point and rotate it in a similar way as
     # above, so that straight ahead means towards the target.
@@ -825,7 +810,7 @@ def checkEndpoint(angle):
 
     # Compute the PDy value after applying the baseline shift (if applicable)
     PDy_shift =  PDy - dc["baseline_pd_shift"]
-    dc['PDend'] = PDy_shiftshowFlag = False
+    dc['PDend'] = PDy_shift
     
     #Let's check whether we are within INIT_DIR_RANGE/2 around the 45 degree angle. We will only update the center of the reward zone if this is true
     is_within_range = dc['angle_maxv_deg'] < INIT_DIR_RANGE/2 and dc['angle_maxv_deg'] > -1*INIT_DIR_RANGE/2 
@@ -850,7 +835,7 @@ def checkEndpoint(angle):
 
 
     # Show explosion? Check the condition to display explosion when required.
-    if feedback and abs(dc["angle_maxv_shift"]*2)<dc["maxv_target_width_deg"]:
+    if feedback and abs(dc["angle_maxv_shift"]*2) < dc["reward_width_maxv_deg"]:
         # This trial got rewarded!
         #if dc['angle_maxv_shift'] > rbias[0] and dc['Theta_maxv_shift']< rbias[1] and feedback:
         status = 1  # 1: rewarded, 0: failed
@@ -864,8 +849,8 @@ def checkEndpoint(angle):
 	status = 0
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
-    dc['logAnswer'] = "%d,%d,%.5f,%d,%d,%.5f,%.5f,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%s,%f,%d,%d"% \
-                      (dc['curtrial'], dc['david'], PDy, angle , status, dc['baseline_angle_shift'], tzx, tzy, dc['speed'], sangle.get(), PDy_shift, dc['PDmaxv'], dc['angle_maxv_deg'], dc['angle_maxv_shift'], dc["maxv_target_width_deg"], dc["subjxmax"], dc["subjymax"], VER_SOFT, POSBIAS - NEGBIAS, dc['session'], dc["filenum"])
+    dc['logAnswer'] = "%d,%d,%d,%.2f,%.5f,%.5f,%.2f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%d,%s,%d"% \
+                      (dc['curtrial'],dc['angle'],status,dc['baseline_angle_shift'],X_end,Y_end,dc['speed'],dc["subjxmax"],dc["subjymax"],PDy,PDy_shift,dc['PDmaxv'],dc['angle_maxv_deg'],dc['angle_maxv_shift'],dc['reward_width_deg'],VER_SOFT,dc['session'])
 
 
 
@@ -950,7 +935,7 @@ def mainGUI():
     varopt.set("instruct + lag-1")      # set default value
 
     # Entry widget for 3rd row --------------
-    Label(topFrame, text="Baseline Bias: ").grid(row=2, sticky=E)
+    Label(topFrame, text="Test Direction: ").grid(row=2, sticky=E)
     e5 = Entry(topFrame, width = 9, bd =1, textvariable = sangle)
     e5.grid(row=2, column=1, columnspan=3, sticky=W, pady=8)
     sangle.set("0")
@@ -1062,7 +1047,6 @@ def prepareCanvas():
     wingui.create_arc([0,0,1,1], extent=180, style=ARC, tag="target")
 
 
-    
 
 def showCursorBar(position, color="yellow"):
     """ Draw the cursor at the current position. If showFlag = False, then display only when the 
@@ -1079,12 +1063,12 @@ def showCursorBar(position, color="yellow"):
     x2, y2 = rob_to_screen(x+CURSOR_SIZE, y+CURSOR_SIZE)
 
     # If hand position is outside the start circle, remove cursor
-    if showFlag:
-         win.itemconfig("hand",fill=color)
-         win.coords("hand",*[x1,y1,x2,y2])
+    if not showFlag and dc['subjd'] >= START_SIZE:
+        win.itemconfig("hand",fill="black")
+        win.coords("hand",*[0,0,0,0])
     else:
-         win.itemconfig("hand",fill="black")
-         win.coords("hand",*[0,0,0,0])
+        win.itemconfig("hand",fill=color)
+        win.coords("hand",*[x1,y1,x2,y2])
     win.tag_lower("start", "hand")
     samsung.update()     # Update the canvas to let changes take effect
 
@@ -1121,7 +1105,6 @@ def showTarget(angle, color="#A5A5A5"):
     wingui.itemconfig("target",extent= ARCEXTENT)
     
   
-
 
 
 def rotate(coords, pivot, angle):
