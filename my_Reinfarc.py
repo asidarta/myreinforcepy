@@ -10,6 +10,7 @@ will be asked to explore the wanted direction. Task is adjusted to be more Reinf
 
 Revisions : Finalizing the working script (Aug 25)
             Major clean up, making the code more readable; cleaning unnecessary logfile variables (Aug 29/30)
+            Introducing instruction audio files again (Sept 4)
 
 """
 
@@ -39,7 +40,7 @@ dc["active"] = False  # Adding this flag to show that the test is currently acti
 showFlag     = True   # Show yellow hand cursor position throughout (default: YES)
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-VER_SOFT = "arc1"
+VER_SOFT = "1.0"
 NTRIAL_MOTOR = 30     # Relevant only for post-test
 NTRIAL_TRAIN = 60     # Training trials with feedback
 CURTRIAL_SET = 15     # Minimum trials before we set the actual target direction during Pre_training
@@ -77,13 +78,13 @@ def quit():
 
 def playAudio (filename):
     subprocess.call(['aplay',"%s/audio/%s"%(mypwd,filename)])
-    time.sleep(0.75)
+    time.sleep(0.1)
     print("---Finished playing %s..."%(filename))    
 
 
 def playInstruct (n):
     global instruct
-    myaudio = "%s/audio/motorpract%d.wav"%(mypwd,n)
+    myaudio = "%s/audio/arc%d.wav"%(mypwd,n)
     if (instruct):
        subprocess.call(['aplay',myaudio])
        time.sleep(1)
@@ -160,6 +161,11 @@ def enterStart(event):
     dc['target']   = np.nan   # NEW!!! This is the subject's unique direction
     dc['angle']    = vardeg.get()   # Read the current workspace, either left/right
 
+    # [Sept 4] To prevent making a mistake in matching the file number and current task-block,
+    # I fix the pair. Example: file 01 is for pre-training, 02 to 04 for training, and 05 for post test
+    if (dc['task']=="pre_train"): 
+        print ("   NOTE to the experimenter !!!!")
+        print ("   Don't forget that the next phase should be purely TRAINING\n") 
 
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
@@ -230,23 +236,22 @@ def runPractice():
     showCursorBar((x,y))
 
     # Setting this to NAN so that we don't get an error when we write the log file
-    dc["reward_width_maxv_deg"] = np.nan
+    dc["reward_width_deg"] = np.nan
 
     #----------------------------------------------------------------
     print("\n--- Practice stage-1: Move towards the target arc")
     print("\n###  Press <Esc> after giving the instruction...")
-    #playInstruct(1)
     showFlag = True
     triallag = 1   
-    while repeatFlag:
-        master.update_idletasks()
-        master.update()
-        time.sleep(0.01)  # loop every 10 sec
-
     showTarget(dc['angle'])     # Show the target arc at this point
+    # Show how to move forward and how the robot brings the arm back.
+    playInstruct(1)
+    to_target()
+    playInstruct(2)
+    return_toStart(triallag)
 
     # 30 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,1):
+    for each_trial in range(1,30):
         dc['curtrial'] = each_trial
         print("\nNew Round %i ----------------- "%each_trial)
         # This is the point where subject starts to move to the target
@@ -264,14 +269,16 @@ def runPractice():
     repeatFlag = True
     print("\n--- Practice stage-2: Occluded arm, yellow cursor off!\n")
     print("\n###  Press <Esc> after giving the instruction...")
+
+    dc['task'] = "motor_post"
+    triallag = 1
+
+    playInstruct(3)
     while repeatFlag:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 sec
 
-    dc['task'] = "motor_post"
-    triallag = 1
-    #playInstruct(2)
     # 20 trials for the subjects to familiarize with the target distance + speed
     for each_trial in range(1,20):
         dc['curtrial'] = each_trial
@@ -287,13 +294,17 @@ def runPractice():
     repeatFlag = True
     print("\n--- Practice stage-3: Show subject the boom!!\n")
     print("\n###  Press <Esc> after giving the instruction...")
-    while repeatFlag:
-        master.update_idletasks()
-        master.update()
-        time.sleep(0.01)  # loop every 10 sec
+    
+    playInstruct(4)
+    #while repeatFlag:
+    #    master.update_idletasks()
+    #   master.update()
+    #    time.sleep(0.01)  # loop every 10 sec
 
-    showImage("Explosion_final.gif",960,140,3)   # Show booms for 3 sec!
-    showImage("score10.gif",965,260,3)
+    playAudio("explo.wav")
+    showImage("Explosion_final.gif",960,140,1)   # Show booms for 3 sec!
+    showImage("score10.gif",965,260,1)
+    playInstruct(5)   # Continue the instruction...
 
     #----------------------------------------------------------------
 
@@ -307,7 +318,7 @@ def runPractice():
 #        time.sleep(0.01)  # loop every 10 sec
         
 #    dc['task'] = "pre_train"
-#    dc["reward_width_maxv_deg"] = 5 # degrees;
+#    dc["reward_width_deg"] = 5 # degrees;
     #playInstruct(4)
     #while repeatFlag:
 #    for each_trial in range(1,20):
@@ -372,19 +383,7 @@ def runBlock():
     each_trial = 1
     while each_trial < ntrial+1:
         dc['curtrial'] = each_trial
-
-        # David St-Amand added this:
-        if dc['task'] in ("pre_train"): 
-             dc['david'] = each_trial 
-        elif dc['filenum'] < 6:
-	     dc['david'] = NTRIAL_TRAIN*(dc["filenum"]-1) + each_trial
-	elif dc['filenum'] > 5:
-	     dc['david'] = NTRIAL_TRAIN*(dc["filenum"]-6) + each_trial
-	else:
-	     dc['david'] = 0
-        
         print("\nNew Round %i ----------------- "%each_trial)
-        print(dc['david'])    
         to_target()                   # Part 1: Reaching out to target
         return_toStart(triallag)      # Part 2: Moving back to center
         saveLog()                     # Finally, save the logged data 
@@ -396,7 +395,6 @@ def runBlock():
     robot.stop_log()   # Stop recording robot data now!
     time.sleep(2)
     robot.stay_fade(dc['cx'],dc['cy'])  # To release robot_stay
-
     master.update()
     dc["active"]    = False   # allow running a new block
 
@@ -552,7 +550,7 @@ def return_toStart(triallag):
        dc['ref'], dc['answer'], RT = 'no_wm','no_wm',0
 
     # (9) We concatenate the logfile content with the WM test response
-    dc['logAnswer'] = "%s,%d,%s,%s,%s,%d,%d\n"%(dc['logAnswer'],triallag,dc['ref'],dc['answer'],dc['task'],RT,ROT_MAG)
+    dc['logAnswer'] = "%s,%d,%s,%s,%s,%d,%d,%s\n"%(dc['logAnswer'],triallag,dc['ref'],dc['answer'],dc['task'],RT,ROT_MAG,VER_SOFT)
  
             
 
@@ -591,8 +589,8 @@ def saveLog(header = False):
         else:
             print("Creating logfile header.....")
             log_file.write("%s\n"%("Trial_block,direction,boom,amount_shifted_deg,x_end,y_end,"\
-            "speed,x_maxv,y_maxv,PDy,PDy_shifted,PDvmax,angle_maxv_deg,angle_maxv_shift,reward_width_deg,"\
-            "version,session,lag,ref_answer,subj_answer,task,WM_RT,rot_angle"))
+            "speed,x_maxv,y_maxv,PDy,PDy_shifted,angle_end_shift,angle_maxv_deg,angle_maxv_shift,reward_width_deg,"\
+            "session,lag,ref_answer,subj_answer,task,WM_RT,rot_angle,version"))
 
 
 def doAnswer():
@@ -803,9 +801,12 @@ def checkEndpoint(angle):
     #dx,dy = dc["subjxmax"],dc["subjymax"] # compute the vector from the center to the vmax point
 
     # CONVENTION: -ve angular value means error to the right (CCW), +ve means error to the left (CW).
-    # WHAT IS THIS???
     dc['angle_maxv_deg'] = math.atan2(dc["subjymax"],dc["subjxmax"])*180/math.pi - 90 - angle # compute the angle of that vector in radians
     if dc["angle_maxv_deg"]<-180: dc["angle_maxv_deg"]+=360
+
+    # Compute angular deviation at movement endpoint!
+    dc['angle_end_deg'] = math.atan2(Y_end,X_end)*180/math.pi - 90 - angle # in radians
+    if dc["angle_end_deg"]<-180: dc["angle_end_deg"]+=360
 
 
     # Compute the PDy value after applying the baseline shift (if applicable)
@@ -828,19 +829,21 @@ def checkEndpoint(angle):
         sangle.set(dc['baseline_angle_shift']); 
         
     dc['angle_maxv_shift'] = dc['angle_maxv_deg'] - dc['baseline_angle_shift']
+    dc['angle_end_shift']  = dc['angle_end_deg']  - dc['baseline_angle_shift']
 
     # Ananda added PDmaxv and angular deviation.
     print "Theta at max velocity          = %f deg" % dc['angle_maxv_deg']
     print "Theta at max velocity, shifted = %f deg" % dc['angle_maxv_shift']
-
+    print "Theta at endpoint, shifted     = %f deg" % dc['angle_end_shift']
 
     # Show explosion? Check the condition to display explosion when required.
-    if feedback and abs(dc["angle_maxv_shift"]*2) < dc["reward_width_maxv_deg"]:
+    if feedback and abs(dc["angle_maxv_shift"]*2) < dc["reward_width_deg"]:
         # This trial got rewarded!
         #if dc['angle_maxv_shift'] > rbias[0] and dc['Theta_maxv_shift']< rbias[1] and feedback:
         status = 1  # 1: rewarded, 0: failed
         dc['scores'] = dc['scores'] + 10
         print "  EXPLOSION!  Current score: %d"%(dc['scores'])
+        playAudio("explo.wav")
         showImage("Explosion_final.gif",960,140,0.5)  
         showImage("score" + str(dc['scores']) + ".gif",965,260,0.5)
     else:
@@ -849,8 +852,8 @@ def checkEndpoint(angle):
 	status = 0
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
-    dc['logAnswer'] = "%d,%d,%d,%.2f,%.5f,%.5f,%.2f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%d,%s,%d"% \
-                      (dc['curtrial'],dc['angle'],status,dc['baseline_angle_shift'],X_end,Y_end,dc['speed'],dc["subjxmax"],dc["subjymax"],PDy,PDy_shift,dc['PDmaxv'],dc['angle_maxv_deg'],dc['angle_maxv_shift'],dc['reward_width_deg'],VER_SOFT,dc['session'])
+    dc['logAnswer'] = "%d,%d,%d,%.2f,%.5f,%.5f,%.2f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%f,%d"% \
+                      (dc['curtrial'],dc['angle'],status,dc['baseline_angle_shift'],X_end,Y_end,dc['speed'],dc["subjxmax"],dc["subjymax"],PDy,PDy_shift,dc['angle_end_shift'],dc['angle_maxv_deg'],dc['angle_maxv_shift'],dc['reward_width_deg'],dc['session'])
 
 
 
@@ -874,7 +877,7 @@ mymsg   = StringVar()
 varopt  = StringVar()
 sangle  = DoubleVar()
 vardeg  = IntVar()
-playAudio = BooleanVar()
+playwav = BooleanVar()
 
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
