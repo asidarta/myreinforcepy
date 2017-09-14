@@ -12,6 +12,7 @@ Revisions : Finalizing the working script (Aug 25)
             Major clean up, making the code more readable; cleaning unnecessary logfile variables (Aug 29/30)
             Introducing instruction audio files again (Sept 4)
             Minor miscellaneous edits (Sept 11)
+            GUI: User has to select which lag and workspace. Filenum and experimental phase are fixed in the code (Sept 14)
 """
 
 
@@ -39,7 +40,7 @@ dc["active"] = False  # Adding this flag to show that the test is currently acti
 showFlag     = True   # Show yellow hand cursor position throughout (default: YES)
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-VER_SOFT = "1.0"
+VER_SOFT = "2.0"
 NTRIAL_MOTOR = 30     # Relevant only for post-test
 NTRIAL_TRAIN = 60     # Training trials with feedback
 MINTRIAL_SET = 15     # Minimum trials before we set the actual target direction during Motor_Pre
@@ -144,8 +145,6 @@ def enterStart(event):
         return
 
     dc["active"]   = True # flag stating we are currently running
-    dc['task']     = varopt.get().split()[0]  # task type
-    dc['lag']      = varopt.get().split()[2]  # lag type
     dc["subjid"]   = subjid.get()
     dc['logfileID']= "%s_%i"%(dc["subjid"],dc["filenum"])
     dc['logpath']  = '%s/data/%s_data/'%(mypwd,dc["subjid"])
@@ -155,14 +154,25 @@ def enterStart(event):
     dc['subjd']    = 0    # initialize robot distance from the center of start position
     dc["PDmaxv"]   = np.nan
     dc['target']   = np.nan   # NEW!!! This is the subject's unique direction
-    dc['angle']    = vardeg.get()   # Read the current workspace, either left/right
 
-    # [Sept 4] To prevent making a mistake in matching the file number and current task-block,
+    # [Sept 11] To prevent making a mistake in matching the file number and current task-block,
     # I fix the pair. Example: file 01 is for pre-training, 02 to 04 for training, and 05 for post test
-    if (dc['task']=="motor_pre"): 
-        print ("\nNOTE to the experimenter !!")
-        print ("Don't forget that the next phase should be purely TRAINING\n") 
+    if (dc["filenum"] == 0): 
+        print ("\nLet's do some practice!!")
+        dc['task'] = "instruct"
+    elif (dc["filenum"] in (1,6)): 
+        print ("\nStarting PRE_TRAINING phase!!")
+        dc['task'] = "pre_train"
+    elif (dc["filenum"] in (2,3,4,7,8,9)): 
+        print ("\nStarting TRAINING phase!!")
+        dc['task'] = "training"
+    elif (dc["filenum"] in (5,10)): 
+        print ("\nStarting PRE_TRAINING phase!!")
+        dc['task'] = "motor_post"
+    else:
+        print ("File number is out of range! Please check again....................")
 
+ 
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
         print ("File already exists: %s.txt"%dc["logname"] )
@@ -252,7 +262,7 @@ def runPractice():
     playInstruct(3)
 
     # 30 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,30):
+    for each_trial in range(1,25):
         dc['curtrial'] = each_trial
         print("\nNew Round %i ----------------- "%each_trial)
         # This is the point where subject starts to move to the target
@@ -281,7 +291,7 @@ def runPractice():
         time.sleep(0.01)  # loop every 10 msec
 
     # 20 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,20):
+    for each_trial in range(1,10):
         dc['curtrial'] = each_trial
         # This is the point where subject starts to move to the target
         print("\nNew Round %i ----------------- "%each_trial)
@@ -293,28 +303,40 @@ def runPractice():
     #----------------------------------------------------------------
     # Let's show them the explosion!
     repeatFlag = True
-    print("\n--- Practice stage-3: Show subject the boom!!\n")
+    print("\n--- Practice stage-3: Showing the boom + score!!\n")
     print("\n###  Press <Esc> after giving the instruction...")
     
     playInstruct(5)
     time.sleep(2)
-    #while repeatFlag:
-    #    master.update_idletasks()
-    #   master.update()
-    #    time.sleep(0.01)  # loop every 10 msec
-
     playAudio("explo.wav")
     showImage("Explosion_final.gif",960,140,1)   # Show booms for 3 sec!
     showImage("score10.gif",965,260,1)
     playInstruct(6)   # Continue the instruction...
+
+    #----------------------------------------------------------------
+    robot.stay()
+    repeatFlag = True
+    print("\n--- Practice stage-4: Showing WM Test \n")
+    print("\n###  Press <Esc> after giving the instruction...")
+    while repeatFlag:
+        master.update_idletasks()
+        master.update()
+        time.sleep(0.01)  # loop every 10 msec
+        
+    #playInstruct(4)
+    #while repeatFlag:
+#    for each_trial in range(1,20):
+#        dc['curtrial'] = each_trial
+#        print("\nNew Round %i ----------------- "%each_trial)
+#        to_target()
+#        return_toStart(triallag)
     
     print("\n\n#### Instruction block has ended! Press QUIT button now.....")
     dc["active"] = False # flag stating we are currently running
 
 
-
     
-
+    
 def runBlock():
     """ The actual test runs once 'Start' or <Enter> key is pressed """
 
@@ -496,7 +518,7 @@ def return_toStart(triallag):
     global nsince_last_test
     
     # Check if this is a training block and if the next trial is test trial to replay 
-    # trajectory with a certain probability 
+    # trajectory with a certain probability. WM Test only happens during training! 
 
     if (dc['task'] == "training") & (random.random() < p_test(nsince_last_test)): 
        master.update()
@@ -657,10 +679,10 @@ def p_test(nn):  # nn = number of trials since the last WM test trial
     elif nn==1: return 0
     elif nn==2: return 0
     elif nn==3: return 0
-    elif nn==4: return 0#.2
-    elif nn==5: return 0#.4
-    elif nn==6: return 0#.6
-    else: return 0#.8
+    elif nn==4: return 0.2
+    elif nn==5: return 0.4
+    elif nn==6: return 0.6
+    else: return 0.8
 
 
 def velocity_check(x,y):
@@ -757,7 +779,7 @@ def checkEndpoint(angle):
     Additionally, the function WRITES trial information into the logfile.
 
     """
-    # Let's check whether we are supposed to give feedback or not. 
+    # Important... Let's check whether we are supposed to give feedback or not. 
     feedback = 0 if dc['task'] in ("motor_pre","motor_post") else 1
     print("  Checking end-position inside target zone?")
     
@@ -770,15 +792,7 @@ def checkEndpoint(angle):
     # CONVENTION: -ve value means error to the left (CCW), +ve means error to the right (CW).\
     # PDy is computed as the lateral deviation at the movement endpoint
     PDy   = trotx-dc['cx']
-
     X_end,Y_end = tx-dc["cx"],ty-dc["cy"] # translate the subject endpoint so that it is relative to the starting point
-
-    # Now we compute the maximum velocity point and rotate it in a similar way as
-    # above, so that straight ahead means towards the target.
-    # Compute the angle at maximum velocity, with zero being straight towards the
-    # target line and with positive angles meaning counter-clockwise deviation.
-    # So notice here no shift is being applied yet; this is a fairly raw angle.
-    #dx,dy = dc["subjxmax"],dc["subjymax"] # compute the vector from the center to the vmax point
 
     # CONVENTION: -ve angular value means error to the right (CCW), +ve means error to the left (CW).
     dc['angle_maxv_deg'] = math.atan2(dc["subjymax"],dc["subjxmax"])*180/math.pi - 90 - angle # compute the angle of that vector in radians
@@ -788,12 +802,12 @@ def checkEndpoint(angle):
     dc['angle_end_deg'] = math.atan2(Y_end,X_end)*180/math.pi - 90 - angle # in radians
     if dc["angle_end_deg"]<-180: dc["angle_end_deg"]+=360
 
-
     # Compute the PDy value after applying the baseline shift (if applicable)
     PDy_shift =  PDy - dc["baseline_pd_shift"]
     dc['PDend'] = PDy_shift
     
-    #Let's check whether we are within INIT_DIR_RANGE/2 around the 45 degree angle. We will only update the center of the reward zone if this is true
+    # Let's check whether we are within INIT_DIR_RANGE/2 around the 45 degree angle.
+    # We will only update the center of the reward zone if this is true!
     is_within_range = dc['angle_maxv_deg'] < INIT_DIR_RANGE/2 and dc['angle_maxv_deg'] > -1*INIT_DIR_RANGE/2 
     
     # NEW: A special case is during Motor_Pre when ntrial reaches MINTRIAL_SET >>>>>>>>>>>>>
@@ -899,39 +913,32 @@ def mainGUI():
     e1.grid(row=0, column=1)
     #e1.insert(END, "aes")
     e1.focus()
-    Label(topFrame, text="File Number: ").grid(row=0, column=3, padx=(40,0))
-    e2 = Entry(topFrame, width = 3, bd =1, textvariable = filenum)
-    e2.grid(row=0, column=4)
+    Label(topFrame, text="File Number: ").grid(row=0, column=2, padx=(20,0))
+    e2 = Entry(topFrame, width = 4, bd =1, textvariable = filenum)
+    e2.grid(row=0, column=3, sticky=W)
     e2.insert(END, "0")
     
     # Entry widget for 2nd row --------------
-    Label(topFrame, text="Experiment Phase: ").grid(row=1, sticky=E)
-    e4 = OptionMenu(topFrame, varopt, "instruct + lag-1",
-                                      "motor_pre + lag-1", 
-                                      "training + lag-1",
-                                      "motor_post + lag-1",
-                                      "instruct + lag-2", 
-                                      "motor_pre + lag-2", 
-                                      "training + lag-2", 
-                                      "motor_post + lag-2", command=OptionSelectEvent)
-    e4.grid(row=1, column=1, columnspan=3, sticky=W)
-    varopt.set("instruct + lag-1")      # set default value
+    Label(topFrame, text="Workspace: ").grid(row=1, column=0, sticky=E)
+    e6 = OptionMenu(topFrame, vardeg, *test_angle, command=OptionSelectEvent)
+    e6.grid(row=1, column=1, columnspan=2, sticky=W, pady=8)
+    vardeg.set("45")      # set default value
 
     # Entry widget for 3rd row --------------
-    Label(topFrame, text="Workspace: ").grid(row=2, column=0, sticky=E)
-    e6 = OptionMenu(topFrame, vardeg, *test_angle)
-    e6.grid(row=2, column=1, columnspan=2, sticky=W, pady=8)
-    vardeg.set("45")      # set default value
+    Label(topFrame, text="WM Test Lag: ").grid(row=1, column=2, padx=(20,0), sticky=E)
+    e4 = OptionMenu(topFrame, varopt, "lag-1", "lag-2", command=OptionSelectEvent)
+    e4.grid(row=1, column=3, columnspan=3, sticky=W)
+    varopt.set("lag-1")      # set default value
+
+    # Entry widget for 4th row --------------
+    Label(topFrame, text="Test Direction: ").grid(row=2, sticky=E)
+    e5 = Entry(topFrame, width=8, bd =1, textvariable = sangle)
+    e5.grid(row=2, column=1, columnspan=3, sticky=W, pady=8)
+    sangle.set("0")
 
     # Check button for playing instruction audio? --------------
     chk = Checkbutton(topFrame, text="Play Audio?", variable=playwav)
     chk.grid(row=2, column=3, sticky=E)
-
-    # Entry widget for 4th row --------------
-    Label(topFrame, text="Test Direction: ").grid(row=3, sticky=E)
-    e5 = Entry(topFrame, width = 9, bd =1, textvariable = sangle)
-    e5.grid(row=3, column=1, columnspan=3, sticky=W)
-    sangle.set("0")
 
     # Create buttons ---------------
     myButton1 = Button(bottomFrame, text="START", bg="#0FAF0F", command=clickStart)
@@ -970,9 +977,9 @@ def clickStart(): # GUI button click!
 def OptionSelectEvent(event):
     # This is to extract the test type and lag of the current task which will determine
     # the type of test parameters, e.g. angle.
-    temp = varopt.get().split()
-    dc['task'] = temp[0]
-    dc['lag']  = temp[2]
+    dc['angle'] = vardeg.get()
+    dc['lag']  = varopt.get()
+    print "You have selected %d workspace and WM test %s"%(dc['lag'],dc['angle'])
     #e5.config(state='normal') if (temp[0]=="training") else e5.config(state='disabled')
 
 
@@ -1171,11 +1178,6 @@ robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")
 
 robot.zeroft()
-
-#print("---Now reading stiffness\n")
-#robot.rshm('plg_stiffness')
-
-#dc['subjx'],dc['subjy'] = robot.rshm('x'),robot.rshm('y')
 
 print("\n\nPress START or <Enter> key to continue\n")
 
