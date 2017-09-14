@@ -573,6 +573,7 @@ def showCursorBar(angle, position, color="yellow", barflag=True):
     # We'll get rotated screen coordinates...
     rot_item = rotate(origxy, (x,y), angle) 
     scr_xy    = [rob_to_screen(x,y) for x,y in rot_item]
+    # Then we flatten scr_xy. Run the for-loop from the most left, then move rightward.
     scr_tuple = tuple([ item for sublist in scr_xy for item in sublist ])  
     #print rot_item
     if barflag:
@@ -598,6 +599,7 @@ def showTarget(angle, color="white"):
     rot_item = rotate(rot_item, (dc['cx'],dc['cy']), angle)
     #print rot_item
     scr_xy    = [rob_to_screen(x,y) for x,y in rot_item]
+    # Flatten the scr_xy and make it as tuple
     scr_tuple = tuple([ item for sublist in scr_xy for item in sublist ])
     # Now show the target circle!
     win.coords("targetcir",*scr_tuple)
