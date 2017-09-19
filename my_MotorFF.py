@@ -9,6 +9,7 @@ a simple FF learning or parallel sensorimotor with reinforcement.
 Revisions: Confirming the new code works like the old Tcl code (Apr 19) 
            Major cleanup with Floris' comments on the code (Apr 21)
            Adding robot data-logging and audio play features (May 4)
+           Adding PDmaxv measure, minor edits in target display (Sept 17)
 """
 
 
@@ -28,13 +29,13 @@ instruct = True      # play instruction audio file?trial
 w, h   = 1920,1080   # Samsung LCD size
 
 # Global definition of constants
-TARGETBAR   = True   # Showing target bar?? Set=False to just show the target circle!
+TARGETBAR   = False  # Showing target bar AND cursor bar?? Set=False to just show the circles!!
 TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
 TARGETTHICK = 0.01   # 20 mm target thickness
 START_SIZE  = 0.009  #  9 mm start point radius
 CURSOR_SIZE = 0.003  #  4 mm cursor point radius
 WAITTIME    = 0.75   # 750 msec general wait or delay time 
-MOVE_SPEED  = 1.5    # duration (in sec) of the robot moving the subject to the center
+MOVE_SPEED  = 1.2    # duration (in sec) of the robot moving the subject to the center
 FADEWAIT    = 1.0
 
 
@@ -191,7 +192,7 @@ def read_design_file(mpath):
 def runPractice():
     global keepPrac
     x,y = robot.rshm('x'),robot.rshm('y')
-    showCursorBar(0, (x,y))
+    showCursorBar(0, (x,y), "yellow", TARGETBAR)
 
     print("--- Practice stage-1: yellow cursor")
     #playInstruct(1)
@@ -203,7 +204,7 @@ def runPractice():
         x,y = robot.rshm('x'),robot.rshm('y')
         # Compute current distance from the center/start--robot coordinate! 
         dc['subjd'] = math.sqrt((x-dc['cx'])**2 + (y-dc['cy'])**2)
-        showCursorBar(0, (x,y))
+        showCursorBar(0, (x,y), "yellow", TARGETBAR)
         time.sleep(0.01)
 
     goToCenter(MOVE_SPEED) # Bring the arm back to the center first
@@ -311,10 +312,10 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
     It formally takes 3 inputs: angle, whether you want to show feedback (reward), and 
     maximum negbias and posbias to receive feedback. By default, feedback is not shown.
     """
-    dc['subjx']= 0;  dc['subjy']= 0
+    dc['subjx']= 0;  dc['subjy']= 0;  vmax = 0
     win.itemconfig("start",fill="white")
     showTarget(angle)
-    showCursorBar(angle, (dc['cx'],dc['cy']))
+    showCursorBar(angle, (dc['cx'],dc['cy']), "yellow", TARGETBAR)
     reach_target = False
 
     if ffval != 0: robot.start_curl(ffval)
@@ -326,12 +327,17 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
         dc['subjx'], dc['subjy'] = x, y
         # Compute current distance from the center/start--robot coordinate! 
     	dc['subjd'] = math.sqrt((x-dc['cx'])**2 + (y-dc['cy'])**2)
-        showCursorBar(angle, (x,y))
+        showCursorBar(angle, (x,y), "yellow", TARGETBAR)
     	#print("Distance from center position= %f"%(subjd))
 
         vx, vy = robot.rshm('fsoft_xvel'), robot.rshm('fsoft_yvel')
         vtot = math.sqrt(vx**2+vy**2)
-        print(robot.rshm('fvv_trial_phase'))
+        #print(robot.rshm('fvv_trial_phase'))
+        
+        # [Jun19] Ananda added this to get x,y positions during the maximum velocity...
+        if vmax < vtot: 
+            vmax = vtot
+            kinmax(angle) # kinematic max (to get PDmaxv)
 
         # (3) When the hand was towards the center (start), check if the subject is 
         # holding still inside the start position.
@@ -371,20 +377,33 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
             samsung.update()
 
              
+def kinmax(angle):
+    """ This function is to compute PD at max velocity and is always called until
+        the velocity reaches the max value!
+    """
+    dc['subjxmax'], dc['subjymax'] = robot.rshm('x'),robot.rshm('y')
+    
+    # The idea is to rotate back to make it a straight-ahead (90deg). Return values in the 
+    # robot coordinates. POSITIVE value means rightward deviation.
+    trotx,troty  = rotate([(dc['subjxmax'], dc['subjymax'])], (dc['cx'],dc['cy']), -angle)[0]
+    dc['PDmaxv'] = trotx-dc['cx']
+
+
 
 def checkEndpoint(angle, feedback, rbias):
     """ The function checks whether the movement endpoint lands inside 
     a reward zone. The width of the reward zone is defined by the rbias that 
     consists of negbias and posbias w.r.t to the target center. 
     """
-    print("  Checking end-position inside reward zone?")
+    print("  Checking end-position inside the target?")
     # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
     # The return values are in the robot coordinates
     tx,ty = dc['subjx'], dc['subjy']
     trot  = rotate([(tx,ty)], (dc['cx'],dc['cy']), -angle)
     #print trot
     PDy  = trot[0][0]-dc['cx']
-    print "  Lateral deviation = %f" %PDy
+    print "  Lateral deviation at endpoint = %f" %PDy
+    print "  Lateral deviation at max vel  = %f" %dc['PDmaxv']
 
     # Check the condition to display explosion when required!
     if PDy > rbias[0] and PDy < rbias[1] and feedback:
@@ -398,7 +417,7 @@ def checkEndpoint(angle, feedback, rbias):
 	status = 0
 
     # This is where I save logfile content!
-    dc['logAccuracy'] = "%.6f %d %d %.3f %.3f %.3f %.3f\n"%(PDy,angle,status,tx,ty,tx-dc['cx'],ty-dc['cy'])
+    dc['logAccuracy'] = "%.6f %.6f %d %d %.3f %.3f %.3f %.3f\n"%(PDy,dc['PDmaxv'],angle,status,tx,ty,tx-dc['cx'],ty-dc['cy'])
     saveLog()
 
 
@@ -557,7 +576,7 @@ def showCursorBar(angle, position, color="yellow", barflag=True):
     x2, y2 = rob_to_screen(x+CURSOR_SIZE, y+CURSOR_SIZE)
 
     # If hand position is outside the start circle, remove cursor
-    if dc['subjd'] <= START_SIZE:      
+    if dc['subjd'] <= START_SIZE or not TARGETBAR:      
        win.itemconfig("hand",fill=color)
        win.coords("hand",*[x1,y1,x2,y2])
     else:
@@ -603,7 +622,9 @@ def showTarget(angle, color="white"):
     scr_tuple = tuple([ item for sublist in scr_xy for item in sublist ])
     # Now show the target circle!
     win.coords("targetcir",*scr_tuple)
-    win.itemconfig("targetcir",fill="red")
+    win.itemconfig("targetcir",fill="white")
+    win.tag_lower("targetcir", "hand")  # Make targetcir to be below the hand cursor!
+    win.tag_lower("targetcir", "target")  # Make targetcir to be below the targetbar!
 
     if TARGETBAR:
     # First construct a set of coordinates for the polygon corners in the robot coordinates.

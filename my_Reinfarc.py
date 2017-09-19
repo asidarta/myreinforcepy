@@ -13,6 +13,7 @@ Revisions : Finalizing the working script (Aug 25)
             Introducing instruction audio files again (Sept 4)
             Minor miscellaneous edits (Sept 11)
             GUI: User has to select which lag and workspace. Filenum and experimental phase are fixed in the code (Sept 14)
+            Setting up the WM test portion again; incorporating this during practice session too (Sept 14)          
 """
 
 
@@ -146,6 +147,8 @@ def enterStart(event):
 
     dc["active"]   = True # flag stating we are currently running
     dc["subjid"]   = subjid.get()
+    dc['angle']    = vardeg.get()
+    dc['lag']      = varopt.get()
     dc['logfileID']= "%s_%i"%(dc["subjid"],dc["filenum"])
     dc['logpath']  = '%s/data/%s_data/'%(mypwd,dc["subjid"])
     dc['logname']  = '%smotorLog_%s'%(dc['logpath'],dc['logfileID'])
@@ -236,17 +239,20 @@ def read_design_file(mpath):
 # This simple block is executed in sequence...
 def runPractice2():
     print "FINISH!"
+    showImage("Explosion_final.gif",900,130,1)   # Show booms for 3 sec!
+    showImage("score10.gif",930,260,1)
     dc["active"] = False # flag stating we are currently running
 
 
 def runPractice():
     global repeatFlag
     global showFlag
-    x,y = robot.rshm('x'),robot.rshm('y')
-    showCursorBar((x,y))
-
     # Define reward width for our target arc. For practice session, define it as NaN.
     dc["reward_width_deg"] = np.nan   # >> Don't make it too small, too tough!
+
+    x,y = robot.rshm('x'),robot.rshm('y')
+    showCursorBar((x,y))
+    playInstruct(0)  # added Sept 11 for the opening speech...
 
     #----------------------------------------------------------------
     print("\n--- Practice stage-1: Move towards the target arc")
@@ -254,6 +260,7 @@ def runPractice():
     showFlag = True
     triallag = 1   
     showTarget(dc['angle'])     # Show the target arc at this point
+
     # Show how to move forward and how the robot brings the arm back.
     playInstruct(1)
     to_target()
@@ -261,8 +268,8 @@ def runPractice():
     return_toStart(triallag)
     playInstruct(3)
 
-    # 30 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,25):
+    # 20 trials for the subjects to familiarize with the target distance + speed
+    for each_trial in range(1,21):
         dc['curtrial'] = each_trial
         print("\nNew Round %i ----------------- "%each_trial)
         # This is the point where subject starts to move to the target
@@ -277,20 +284,20 @@ def runPractice():
     robot.stay()
     showTarget(dc['angle'], "black")  # Don't show the target arc now
     showFlag = False
-    repeatFlag = True
+
     print("\n--- Practice stage-2: Occluded arm, yellow cursor off!\n")
     print("\n###  Press <Esc> after giving the instruction...")
-
     dc['task'] = "motor_post"
     triallag = 1
-
     playInstruct(4)
+
+    repeatFlag = True
     while repeatFlag:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 msec
 
-    # 20 trials for the subjects to familiarize with the target distance + speed
+    # 10 trials for the subjects to familiarize with the target distance + speed
     for each_trial in range(1,10):
         dc['curtrial'] = each_trial
         # This is the point where subject starts to move to the target
@@ -301,35 +308,45 @@ def runPractice():
         each_trial = each_trial + 1
 
     #----------------------------------------------------------------
-    # Let's show them the explosion!
-    repeatFlag = True
-    print("\n--- Practice stage-3: Showing the boom + score!!\n")
-    print("\n###  Press <Esc> after giving the instruction...")
-    
+    print("\n--- Practice stage-3: Showing explosion + score \n")
     playInstruct(5)
     time.sleep(2)
     playAudio("explo.wav")
-    showImage("Explosion_final.gif",960,140,1)   # Show booms for 3 sec!
-    showImage("score10.gif",965,260,1)
+    showImage("Explosion_final.gif",900,130,2)   # Show booms for 2 sec!
+    showImage("score10.gif",930,260,2)
+    robot.stay()
+
     playInstruct(6)   # Continue the instruction...
+    repeatFlag = True
+    while repeatFlag:
+        master.update_idletasks()
+        master.update()
+        time.sleep(0.01)  # loop every 10 msec
 
     #----------------------------------------------------------------
-    robot.stay()
-    repeatFlag = True
-    print("\n--- Practice stage-4: Showing WM Test \n")
+    print("\n--- Practice stage-4: Explaining WM Test \n")
     print("\n###  Press <Esc> after giving the instruction...")
+
+    playInstruct(7)
+    showImage("test_trial.gif",700,150,2)
+    playInstruct(8)
+    
+    repeatFlag = True
     while repeatFlag:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 msec
         
-    #playInstruct(4)
-    #while repeatFlag:
-#    for each_trial in range(1,20):
-#        dc['curtrial'] = each_trial
-#        print("\nNew Round %i ----------------- "%each_trial)
-#        to_target()
-#        return_toStart(triallag)
+    triallag = 1      # Just test lag-1 for practice purposes!
+    dc['task'] = "training"
+    dc["reward_width_deg"] = np.nan
+
+    for each_trial in range(1,15):
+        dc['curtrial'] = each_trial
+        print("\nNew Round %i ----------------- "%each_trial)
+        to_target()
+        return_toStart(triallag)
+        each_trial = each_trial + 1
     
     print("\n\n#### Instruction block has ended! Press QUIT button now.....")
     dc["active"] = False # flag stating we are currently running
@@ -360,11 +377,11 @@ def runBlock():
 
     dc['baseline_angle_shift'] = sangle.get()
     
-    ntrial = NTRIAL_TRAIN if dc['task'] in ("motor_pre", "training") else NTRIAL_MOTOR
+    ntrial = NTRIAL_TRAIN if dc['task'] in ("pre_train", "training") else NTRIAL_MOTOR
     
     showTarget(dc['angle'], "black")  # Don't show the target arc now
 
-    print("Start testing..... %s, with angle %d"%(varopt.get(),vardeg.get()) )
+    print ("Starting %s in the %d workspace, with WM test %s"%(dc['task'],dc['angle'],dc['lag']))
     global nsince_last_test
     nsince_last_test = 0
 
@@ -373,7 +390,7 @@ def runBlock():
     
     # Added so that we can separate aimless reaching and actual training
     each_trial = 1
-    while dc['task'] == 'motor_pre':
+    while dc['task'] == 'pre_train':
        dc['curtrial'] = each_trial
        print("\nNew Round %i ----------------- "%each_trial)
        to_target()                   # Part 1: Reaching out to target
@@ -534,7 +551,7 @@ def return_toStart(triallag):
        # Note: If the next trial is a replay, it should go instead to 
        # the first position recorded, not the center position.
        robot.move_stay(firstx, firsty, MOVE_SPEED)
-       showImage("test_trial.gif",630,150,1.5)
+       showImage("test_trial.gif",700,150,1.5)
             
        # If this is test trial, now replay the rotated trajectory [left/right]
        time.sleep(0.5)
@@ -678,12 +695,12 @@ def p_test(nn):  # nn = number of trials since the last WM test trial
     if   nn==0: return 0
     elif nn==1: return 0
     elif nn==2: return 0
-    elif nn==3: return 0
+    elif nn==3: return 0.1
     elif nn==4: return 0.2
     elif nn==5: return 0.4
-    elif nn==6: return 0.6
-    else: return 0.8
-
+    else: return 0.8 #0.6
+    #else: return 0.8
+    
 
 def velocity_check(x,y):
     """ This function tries to find the time point in which movement velocity reaches 
@@ -780,7 +797,7 @@ def checkEndpoint(angle):
 
     """
     # Important... Let's check whether we are supposed to give feedback or not. 
-    feedback = 0 if dc['task'] in ("motor_pre","motor_post") else 1
+    feedback = 0 if dc['task'] in ("pre_train","motor_post") else 1
     print("  Checking end-position inside target zone?")
     
     # Now let's first look at the subject movement endpoint.
@@ -814,7 +831,7 @@ def checkEndpoint(angle):
     #       (1) Then capture the angle/direction of that trial to be the desired test direction!
     #       (2) Show explosion indicating that it's gonna be the test direction.
     # If we are during pre, AND after a certain number of trials, AND within the range we defined, let's update the center of the reward zone! :) 
-    if dc['task'] == "motor_pre" and dc['curtrial'] > MINTRIAL_SET and is_within_range:
+    if dc['task'] == "pre_train" and dc['curtrial'] > MINTRIAL_SET and is_within_range:
         dc['task'] = 'training'
         feedback = 1 
         dc['baseline_angle_shift'] = dc['angle_maxv_deg'] # Set current movement angle (w.r.t 45 degrees) as the new reward center.
@@ -838,8 +855,8 @@ def checkEndpoint(angle):
         dc['scores'] = dc['scores'] + 10
         print "  EXPLOSION!  Current score: %d"%(dc['scores'])
         playAudio("explo.wav")
-        showImage("Explosion_final.gif",960,140,0.5)  
-        showImage("score" + str(dc['scores']) + ".gif",965,260,0.5)
+        showImage("Explosion_final.gif",900,130,1)   # Show booms for 3 sec!
+        showImage("score" + str(dc['scores']) + ".gif",930,260,0.5)
     else:
         # This trial does not get rewarded
         time.sleep(WAITTIME)
@@ -978,8 +995,8 @@ def OptionSelectEvent(event):
     # This is to extract the test type and lag of the current task which will determine
     # the type of test parameters, e.g. angle.
     dc['angle'] = vardeg.get()
-    dc['lag']  = varopt.get()
-    print "You have selected %d workspace and WM test %s"%(dc['lag'],dc['angle'])
+    dc['lag']   = varopt.get()
+    print ("You have selected %d workspace and WM test %s"%(dc['lag'],dc['angle']))
     #e5.config(state='normal') if (temp[0]=="training") else e5.config(state='disabled')
 
 
