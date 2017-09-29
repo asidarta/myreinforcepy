@@ -10,6 +10,7 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Major cleanup with Floris' comments on the code (Apr 21)
            Adding robot data-logging and audio play features (May 4)
            Adding PDmaxv measure, minor edits in target display (Sept 17)
+           Adding channel trial feature, force transducers readouts. Rearranging to_target function (Sept 22)
 """
 
 
@@ -22,20 +23,21 @@ import subprocess
 
 
 # Global definition of variables
-dc = {}              # dictionary for important param
-mypwd  = os.getcwd() # retrieve code current directory
-keepPrac = True      # keep looping in the current practice segment
-instruct = True      # play instruction audio file?trial
-w, h   = 1920,1080   # Samsung LCD size
+dc = {}               # dictionary for important param
+mypwd  = os.getcwd()  # retrieve code current directory
+keepPrac = True       # keep looping in the current practice segment
+instruct = True       # play instruction audio file?trial
+w, h   = 1920,1080    # Samsung LCD size
+dc["active"] = False  # Adding this flag to show that the test is currently active!!
 
 # Global definition of constants
-TARGETBAR   = False  # Showing target bar AND cursor bar?? Set=False to just show the circles!!
-TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
-TARGETTHICK = 0.01   # 20 mm target thickness
-START_SIZE  = 0.009  #  9 mm start point radius
-CURSOR_SIZE = 0.003  #  4 mm cursor point radius
-WAITTIME    = 0.75   # 750 msec general wait or delay time 
-MOVE_SPEED  = 1.2    # duration (in sec) of the robot moving the subject to the center
+TARGETBAR   = False   # Showing target bar AND cursor bar?? Set=False to just show the circles!!
+TARGETDIST  = 0.15    # move 15 cm from the center position (default!)
+TARGETTHICK = 0.01    # 20 mm target thickness
+START_SIZE  = 0.009   #  9 mm start point radius
+CURSOR_SIZE = 0.003   #  4 mm cursor point radius
+WAITTIME    = 0.75    # 750 msec general wait or delay time 
+MOVE_SPEED  = 1.2     # duration (in sec) of the robot moving the subject to the center
 FADEWAIT    = 1.0
 
 
@@ -113,11 +115,16 @@ def goToCenter(speed):
 def enterStart(event):
     """ Start main program, taking "Enter" button as input-event """
 
+    if dc["active"]:  # Is the test already running?
+        print("##Error## Already active! -- aborting")
+	return
+
     # First, check whether the entry fields have usable text (need subjID, a file number, etc.)
     if not subjid.get() or not filenum.get().isdigit():
         print("##Error## Subject ID and/or file numbers are empty or file number is not a digit!")
         return
 
+    dc["active"]    = True # flag stating we are currently running
     dc["subjid"]    = subjid.get()
     dc["filenum"]   = int(filenum.get())
     dc['logfileID'] = "%s%i"%(dc["subjid"],dc["filenum"])
@@ -126,19 +133,22 @@ def enterStart(event):
     dc['scores']    = 0    # have to reset the score to 0 for each run!
     dc['curtrial']  = 0    # initialize current test trial
     dc['subjd']     = 0    # initialize robot distance from the center of start position
+    dc['targetx'],dc['targety'],dc['PDmaxv'] = 0,0,0
+    dc['fX'],dc['fY'] = 0,0
 
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
         print ("File already exists: %s.txt"%dc["logname"] )
+    	dc["active"] = False # mark that we are no longer running
         return
 
     # Force-field and parallel sensorimotor learning are legacy experiments.
     if dc["filenum"] == 0:
-        filepath = mypwd+"/exper_design/archive/practice.txt"
+        filepath = mypwd+"/exper_design/practice.txt"
         e3.config(state='normal')
         e4.config(state='disabled')
     else:
-        filepath = mypwd+"/exper_design/archive/" + varopt.get() + ".txt"
+        filepath = mypwd+"/exper_design/" + varopt.get() + ".txt"  ##>> archive folder?
         e3.config(state='disabled')
         e4.config(state='normal')
 
@@ -251,6 +261,7 @@ def runPractice():
     
     playInstruct(5)
     print("\n#### Session has ended! Press QUIT button now.....")
+    dc["active"] = False # mark that we are no longer running
 
 
     
@@ -258,6 +269,7 @@ def runBlock():
     """ The main code once 'Start' or <Enter> key is pressed """
     minvel, maxvel = dc['mydesign']['settings']["velmin"], dc['mydesign']['settings']["velmax"]
     ffstrength = dc['mydesign']['settings']["ffstrength"]    
+    saveLog(True) # create a header file in the logfile
 
     # This is to play specific block-instruction
     if playAudio.get():
@@ -270,20 +282,12 @@ def runBlock():
         ffield = xxx['FField']
     	fdback = xxx['feedback']
     	rbias  = [xxx["negbias"], xxx["posbias"]]
+        dc['trial'] = index
         print("\nNew Round- %i"%index)
         # Reference: straight-ahead is defined as 90 deg
         angle = angle - 90
-     
-        # (1) Check if this is a null or FF motor learning task. If FF, then compute
-        # the curl value taking into account the direction (CW = +ve, CCW = -ve).
-        if ffield == "null":
-          ffval = 0
-        elif ffield == "cwff":
-          ffval = 1*ffstrength
-        elif ffield == "ccwff":
-          ffval = -1*ffstrength
 
-        # (2) Wait at center or home position first before giving the go-ahead signal.
+        # (1) Wait at center or home position first before giving the go-ahead signal.
         robot.wshm('fvv_trial_phase', 1)  
         # Release robot_stay() to allow movement in principle, but we haven't given 
         # subjects the signal yet that they can start moving.
@@ -292,13 +296,14 @@ def runBlock():
         robot.stay_fade(dc['cx'],dc['cy'])
         time.sleep(FADEWAIT)
 
-        # (3) Reaching outward to the target!
-        to_target(angle,ffval,fdback,rbias)
-        # (4) Return to the center position. Ready for the next trial.
+        # (2) Reaching outward to the target!
+        to_target(angle,ffield,fdback,rbias)
+        # (3) Return to the center position. Ready for the next trial.
         goToCenter(MOVE_SPEED)
 
-    print("\n#### Test has ended! You may continue or QUIT now.....")
-    
+    print("\n#### Test has ended! You may continue with the NEXT block or QUIT now.....")
+    dc["active"] = False   # allow running a new block
+
     robot.stop_log()  # Stop data logging now!
     time.sleep(2)     # 2-sec delay
     # Allow us to proceed to the next block without quiting
@@ -307,7 +312,7 @@ def runBlock():
     master.update()
 
 
-def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
+def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
     """ This handles the whole trial segment when subject moves to hidden target 
     It formally takes 3 inputs: angle, whether you want to show feedback (reward), and 
     maximum negbias and posbias to receive feedback. By default, feedback is not shown.
@@ -318,11 +323,28 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
     showCursorBar(angle, (dc['cx'],dc['cy']), "yellow", TARGETBAR)
     reach_target = False
 
-    if ffval != 0: robot.start_curl(ffval)
+    # (4) Check if this is a null or FF motor learning task. If FF, then compute
+    # the curl value taking into account the direction (CW = +ve, CCW = -ve).
+    # Do this JUST BEFORE WE START MOVING TO THE TARGET!
+   
+    ffstrength = dc['mydesign']['settings']["ffstrength"] 
+    
+    if ffield == "null":
+          ffval = 0
+    elif ffield == "cwff":
+          ffval = 1*ffstrength
+          robot.start_curl(ffval)
+    elif ffield == "ccwff":
+          ffval = -1*ffstrength
+          robot.start_curl(ffval)
+    elif ffield == "channel":
+          ffval = 0  # Note: it doesn't mean there is no force though!
+          print dc["targetx"], dc["targety"]
+          robot.plg_channel(dc['targetx'],dc['targety'])
 
     while not reach_target: # while the subject has not reached the target
         
-        # (2) First get current x,y robot position and update yellow cursor location
+        # (5) First get current x,y robot position and update yellow cursor location
         x,y = robot.rshm('x'),robot.rshm('y')
         dc['subjx'], dc['subjy'] = x, y
         # Compute current distance from the center/start--robot coordinate! 
@@ -339,7 +361,7 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
             vmax = vtot
             kinmax(angle) # kinematic max (to get PDmaxv)
 
-        # (3) When the hand was towards the center (start), check if the subject is 
+        # (6) When the hand was towards the center (start), check if the subject is 
         # holding still inside the start position.
         if robot.rshm('fvv_trial_phase')==1:  
             if dc["subjd"]< START_SIZE and vtot < 0.01:
@@ -350,7 +372,7 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
                 start_time = time.time()
                 robot.wshm('fvv_trial_phase', 2)
 
-        # (5) If the subject has reached the the target, check if the subject has moved 
+        # (7) If the subject has reached the the target, check if the subject has moved 
         # sufficiently far AND is coming to a stop.   
         elif robot.rshm('fvv_trial_phase')==2:
             if dc["subjd"] > 0.8*TARGETDIST and vtot < 0.05:
@@ -362,12 +384,12 @@ def to_target(angle, ffval=0, fdback=0, rbias=[0,0]):
                 print("  Movement duration = %.1f msec"%(myspeed))
 
         elif robot.rshm('fvv_trial_phase')==3:
-            # (6) Once reached the target, check end-point accuracy
+            # (8) Once reached the target, check end-point accuracy
             checkEndpoint(angle, fdback, rbias)
             master.update()
             reach_target = True  # To quit while-loop!
         
-            # (7) Ready to move back. Remove hand position cursor, make start circle white. 
+            # (9) Ready to move back. Remove hand position cursor, make start circle white. 
             win.coords("hand",*[0,0,0,0])
             win.itemconfig("hand",fill="black")
             win.coords("handbar",*[0,0,0,0])
@@ -387,6 +409,11 @@ def kinmax(angle):
     # robot coordinates. POSITIVE value means rightward deviation.
     trotx,troty  = rotate([(dc['subjxmax'], dc['subjymax'])], (dc['cx'],dc['cy']), -angle)[0]
     dc['PDmaxv'] = trotx-dc['cx']
+
+    # Read the force exterted to the handle at max. velocity for Force-field paradigm!
+    dc['fX'] = robot.rshm('ft_world_x')
+    dc['fY'] = robot.rshm('ft_world_y')
+
 
 
 
@@ -416,19 +443,27 @@ def checkEndpoint(angle, feedback, rbias):
         time.sleep(WAITTIME)
 	status = 0
 
-    # This is where I save logfile content!
-    dc['logAccuracy'] = "%.6f %.6f %d %d %.3f %.3f %.3f %.3f\n"%(PDy,dc['PDmaxv'],angle,status,tx,ty,tx-dc['cx'],ty-dc['cy'])
+    # This is where I save logfile content! Note the delimiter is a comma.
+    dc['logAccuracy'] = "%d,%.3f,%.3f,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n"%(dc['trial'],PDy,dc['PDmaxv'],angle,status,tx,ty,tx-dc['cx'],ty-dc['cy'],dc['fX'],dc['fY'])
     saveLog()
 
 
 
-# Function save logfile and mkdir if needed
-def saveLog():
-    print("---Saving trial log.....")   
+# This function saves logfile and mkdir if needed. 
+# Column header is written only at the beginning! Change/add the field names if required.
+def saveLog(header = False):
     # Making a new directory has been moved to getCenter()...
     #if not os.path.exists(dc['logpath']): os.makedirs(dc['logpath'])
     with open("%s.txt"%dc['logname'],'aw') as log_file:
-        log_file.write(dc['logAccuracy'])  # Save every trial as text line
+        if (header == False):
+            print("Saving trial log.....")
+            log_file.write(dc['logAccuracy'])  # Save every trial as text line
+        else:
+            print("Creating logfile header.....")
+            log_file.write("%s\n"%("Trial,PDy,PDmaxv,angle,status,tx,ty,tx-cx,ty-cy,forceX,forceY"))
+
+
+
 
 
 
@@ -456,8 +491,7 @@ playAudio = BooleanVar()
 #caldata = os.popen('./robot/ParseCalData robot/cal_data.txt').read()
 #print caldata.split("\t")
 
-coeff = "9.781831e+02,1.838148e+03,4.368059e+02,2.120721e+02,1.827717e+03,3.235548e+02".split(',')
-#coeff = "9.645104e+02    1.884507e+03    5.187605e+01    2.876710e+02    1.863987e+03    4.349610e+01 ".split()
+coeff = "1.004991e+03,1.848501e+03,4.531727e+02,2.106822e+02,1.877361e+03,1.084496e".split(',')
 ## WARNING: THESE COEFFICIENTS ARE ACTUALLY OFF (NEED TO RE-COMPUTE THEM)
 
 
@@ -609,14 +643,19 @@ def showTarget(angle, color="white"):
     Show the target at the given angle painted in the given color. You can construct both a target circle and
     a target bar overlayed on the circle.
     """
-    # Construct coordinates for target circle in the robot coordinates.
+    # Construct coordinates for target circle in the robot coordinates. This is assuming a straightahead movement (90deg).
     x1, y1   = dc['cx']-TARGETTHICK, dc['cy']+TARGETDIST-TARGETTHICK
     x2, y2   = dc['cx']+TARGETTHICK, dc['cy']+TARGETDIST+TARGETTHICK
     origxy = [(x1,y1),(x2,y2)]
-    # Trick: Rotate twice; first rotate w.r.t its own center, then w.r.t start position
+    # Trick: Rotate the circle twice; first rotate w.r.t its own center, then w.r.t start position
     rot_item = rotate(origxy, (dc['cx'],dc['cy']+TARGETDIST), -angle)
     rot_item = rotate(rot_item, (dc['cx'],dc['cy']), angle)
     #print rot_item
+    
+    # Find the center of the rotated target, used in the force channel!!!
+    dc["targetx"], dc["targety"] = 0.5*(rot_item[0][0]+rot_item[1][0]), 0.5*(rot_item[0][1]+rot_item[1][1]) 
+    
+    # Then convert this to the screen/pixel coordinates.
     scr_xy    = [rob_to_screen(x,y) for x,y in rot_item]
     # Flatten the scr_xy and make it as tuple
     scr_tuple = tuple([ item for sublist in scr_xy for item in sublist ])
@@ -681,13 +720,13 @@ def showImage(name, px=w/2, py=h/2, delay=1.0):
     label = Label(win, bg="black", image=myImage)
     label.image = myImage # keep a reference!
     label.place(x=px, y=py)
-    # Update the canvas to let changes take effect
+
+    # Update canvas for changes to take effect. Remove the image by giving empty file.
     samsung.update()
     time.sleep(delay)
-    label.config(image='') 
     label.place(x=0, y=0)   
+    label.config(image='') 
     time.sleep(0.1)
-    samsung.update()
     #print "  Removing inage from the canvas...."
 
 

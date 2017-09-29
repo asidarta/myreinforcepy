@@ -43,6 +43,7 @@ w, h   = 1920,1080    # Samsung LCD size
 # 4 movements prior. We also have a counter how many trials since the last TEST trial.
 nsince_last_test = 0
 
+
 # Global definition for test-related parameters. This list replaces exper_design file.
 NEGBIAS = -0.006   # 12 mm reward zone width, the variable name is legacy from Nicolo!
 POSBIAS = +0.006   # 12 mm reward zone width
@@ -62,8 +63,9 @@ TARGETTHICK = 0.010  # 20 mm target thickness
 START_SIZE  = 0.009  #  9 mm start point radius
 CURSOR_SIZE = 0.003  #  3 mm cursor point radius
 WAITTIME    = 0.75   # 750 msec general wait or delay time 
-MOVE_SPEED  = 1.5    # duration (in sec) of the robot moving the subject to the center
-FADEWAIT    = 1.0
+MOVE_SPEED  = 1.1    # duration (in sec) of the robot moving the subject to the center
+FADEWAIT    = 0.75
+
 
 # How big a window to use for smoothing (see tools/smoothing for details about the effects)
 SMOOTHING_WINDOW_SIZE = 9 
@@ -123,7 +125,7 @@ def quit():
 def playAudio (filename):
     subprocess.call(['aplay',"%s/audio/%s"%(mypwd,filename)])
     time.sleep(0.75)
-    print("---Finished playing %s..."%(filename))    
+    #print("---Finished playing %s..."%(filename))
 
 
 def playInstruct (n):
@@ -229,7 +231,7 @@ def enterStart(event):
     GoSignal()
 
     global traj_display
-    print "cleaning canvas"
+    print "cleaning canvas......"
     # remove old trajectory from the GUI if it's there
     if traj_display!=None: 
         wingui.delete("traj")
@@ -244,7 +246,7 @@ def enterStart(event):
     #          That is, if the bias sign is -ve, the shift should be +ve.
     if dc['task'] in ("training", "motor_post"): 
         dc["baseline_pd_shift"] = bbias.get() - np.sign(bbias.get())*BIAS_SHIFT_pd
-        print ("  Reward zone has shifted for %f"%(BIAS_SHIFT_pd + bbias.get()))
+        print ("  Reward zone has shifted for %.5f"%(BIAS_SHIFT_pd + bbias.get()))
     else:
         dc["baseline_pd_shift"] = 0
     
@@ -265,11 +267,11 @@ def enterStart(event):
     # Once set, we're ready for the main or actual test (filenum > 0).
     if dc["filenum"] == 0:
         prepareCanvas()       # Prepare drawing canvas objects
-        print("\nEntering Practice Block now.........\n")
+        print("\n### Entering Practice Block now.........\n")
         runPractice()   
     else:
         prepareCanvas()       # Prepare drawing canvas objects
-        print("\nEntering Test Block now.........\n")
+        print("\n### Entering Test Block now.........\n")
         # Once set, we're ready for the actual test!
         runBlock()
 
@@ -469,14 +471,13 @@ def runBlock():
     #print dc['bbias']
     #print("\n[Note:] Subject's MEAN raw bias:     %.5f DON'T USE THIS"%np.mean(dc['bbias']))
     #print("\n[Note:] Subject's MEDIAN raw bias:   %.5f DON't USE THIS"%np.median(dc['bbias']))
-    print("\n[Note:] Subject's MEAN   angle at vmax: %.5f deg (DON'T USE THIS)"%np.mean  (dc['angle_maxv_history']))
-    print("\n[Note:] Subject's MEDIAN angle at vmax: %.5f deg"                 %np.median(dc['angle_maxv_history']))
-    print("\n\n#### Test has ended! You may continue or QUIT now.....")
-    
+    print("\n[Note:] Subject's MEAN   angle at vmax: %.3f deg (DON'T USE THIS)"%np.mean  (dc['angle_maxv_history']))
+    print("\n[Note:] Subject's MEDIAN angle at vmax: %.3f deg"                 %np.median(dc['angle_maxv_history']))
+    print("\n\n#### Test has ended! You may continue with the NEXT block or QUIT now.....")
+
     robot.stop_log()   # Stop recording robot data now!
     time.sleep(2)
-    robot.stay_fade(dc['cx'],dc['cy'])  # To release robot_stay
-
+    #robot.stay_fade(dc['cx'],dc['cy'])  # Good to hold the position in place
     master.update()
     dc["active"]    = False   # allow running a new block
 
@@ -552,8 +553,8 @@ def to_target(angle, fdback=0, rbias=[0,0]):
                 print("  Movement duration = %.1f msec"%(dc['speed']))
                 filter_traj()   # Filter the captured trajectory (when stop capturing!)
             
-            ## 4sec timeout if cannot/never reach the target
-            if (time.time()-start_time) > 4:
+            ## 2-sec timeout if cannot/never reach the target
+            if (time.time()-start_time) > 2:
                 master.update()
                 goToCenter(MOVE_SPEED)
                 time.sleep(0.1)
@@ -598,7 +599,7 @@ def return_toStart(triallag):
     global nsince_last_test
     
     # Check if this is a training block and if the next trial is test trial to replay 
-    # trajectory with a certain probability 
+    # trajectory with a certain probability. WM Test only happens during training!
 
     if (dc['task'] == "training") & (random.random() < p_test(nsince_last_test)): 
        master.update()
@@ -614,7 +615,7 @@ def return_toStart(triallag):
        # Note: If the next trial is a replay, it should go instead to 
        # the first position recorded, not the center position.
        robot.move_stay(firstx, firsty, MOVE_SPEED)
-       showImage("test_trial.gif",630,150,1.5)
+       showImage("test_trial.gif",700,150,1.5)
             
        # If this is test trial, now replay the rotated trajectory [left/right]
        time.sleep(0.5)
@@ -682,7 +683,7 @@ def doAnswer():
         master.update()
         time.sleep(0.3)
     RT = 1000*(time.time() - start_time)  # RT in m-sec
-    print "--- ANSWER: %s    RT:%d"%(dc['answer'],RT)
+    print "--- RESPONSE: %s    RT:%d"%(dc['answer'],RT)
     ANSWERFLAG = 0
     return(RT)
 
@@ -715,10 +716,10 @@ def replay_traj(rotate_flag = True):
     traj = dc['ttraj']
 
     if rotate_flag:
-        # Flip coin whether +5deg or -5deg rotation. Convention: Positive angle is CCW (to the left)! 
+        # Flip coin whether +5deg or -5deg rotation. Convention: Positive angle is CCW (to the left) !!!
         rot_angle = random.choice([-1,1]) * ROT_MAG 
         traj_rot  = rotate(traj, (dc['cx'],dc['cy']), rot_angle)
-        print("ROTATING the trajectory in robot coords, %d degree"%(rot_angle))
+        print("ROTATING the trajectory in robot coords, %d degree [positive:left]"%(rot_angle))
         # The rotated trajectory is in the list of tuples....
         #print traj_rot[150]
         #print traj_rot[210]
@@ -891,10 +892,10 @@ def checkEndpoint(angle, feedback):
     dc['PDend'] = PDy_shift
 
     # Ananda added PDmaxv and angular deviation.
-    print "Theta at max velocity          = %f deg" % dc['angle_maxv_deg']
-    print "Theta at max velocity, shifted = %f deg" % dc['angle_maxv_shift']
-    print "PD at max velocity             = %f" % dc['PDmaxv']
-    print "PD at endpoint, shifted        = %f" % PDy_shift
+    print "Theta at max velocity          = %.3f deg" % dc['angle_maxv_deg']
+    print "Theta at max velocity, shifted = %.3f deg" % dc['angle_maxv_shift']
+    print "PD at max velocity             = %.3f" % dc['PDmaxv']
+    print "PD at endpoint, shifted        = %.3f" % PDy_shift
     dc['bbias'].append(PDy)
     dc['angle_maxv_history'].append(dc['angle_maxv_deg']) # keep this angle for future reference
     
@@ -906,8 +907,8 @@ def checkEndpoint(angle, feedback):
         status = 1  # 1: rewarded, 0: failed
         dc['scores'] = dc['scores'] + 10
         print "  EXPLOSION!  Current score: %d"%(dc['scores'])
-        showImage("Explosion_final.gif",960,140,0.5)  
-        showImage("score" + str(dc['scores']) + ".gif",965,260,0.5)
+        showImage("Explosion_final.gif",900,130,0.5)
+        showImage("score" + str(dc['scores']) + ".gif",930,260,0.5)
     else:
         # This trial does not get rewarded
         time.sleep(WAITTIME)
@@ -967,9 +968,8 @@ playAudio = BooleanVar()
 
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
+coeff = "1.004991e+03,1.848501e+03,4.531727e+02,2.106822e+02,1.877361e+03,1.084496e".split(',')
 
-#coeff = "9.645104e+02,1.884507e+03,5.187605e+01,2.876710e+02,1.863987e+03,4.349610e+01".split(',')
-coeff = "9.781831e+02,1.838148e+03,4.368059e+02,2.120721e+02,1.827717e+03,3.235548e+02".split(',')
 
 def rob_to_screen(robx, roby):
     px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
@@ -1096,12 +1096,18 @@ def clickYes(event):
     print "Left key pressed to answer LEFT!"
     dc['answer']= 'left'
     ANSWERFLAG = 1
+    if ANSWERFLAG:  # Is the reply already recorded?
+       print("##Error## Wrong timing to press LEFT/button already pressed....")
+
 
 def clickNo(event):
     global ANSWERFLAG
     print "Right key pressed to answer RIGHT!"
     dc['answer']= 'right'
     ANSWERFLAG = 1
+    if ANSWERFLAG:  # Is the reply already recorded?
+       print("##Error## Wrong timing to press RIGHT/button already pressed....")
+
 
 def contPractice(event):
     ### Pressing <Esc> will quit the while-loop of a current practice stage then move 
@@ -1259,14 +1265,14 @@ def showImage(name, px=w/2, py=h/2, delay=1.0):
     label.image = myImage # keep a reference!
     label.place(x=px, y=py)
 
-    # Update the canvas to let changes take effect
+    # Update canvas for changes to take effect. Remove the image by giving empty file.
     samsung.update()
     time.sleep(delay)
-    label.config(image='') 
     label.place(x=0, y=0)   
+    label.config(image='') 
     time.sleep(0.1)
-    samsung.update()
     #print "  Removing inage from the canvas...."
+
 
 
 def GoSignal(name="go_signal.gif",px=-100,py=-100):
@@ -1286,7 +1292,7 @@ master.bind('<Left>'  , clickYes)
 master.bind('<Right>' , clickNo)
 master.bind('<Escape>', contPractice)
 
-os.system("clear")
+os.system("clear")  # Clear the terminal
 
 
 ######### This is the entry point when you launch the code ################
