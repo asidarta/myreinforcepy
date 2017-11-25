@@ -9,6 +9,7 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Combining both somatic and visuospatial WM test (Apr 20) 
            Major cleanup on the code (Apr 21)
            Adding robot data-logging and audio play features (May 4)
+           Tweaks on how to handle subject's response. Tidying up. (Nov 25)
 
 """
 
@@ -28,7 +29,7 @@ mypwd = os.getcwd()  # retrieve code current directory
 instruct = True      # play the instruction audio?
 
 # Global definition of constants
-ANSWERFLAG  = 0      # Flag = 1 means subject has responded
+ANSWERFLAG  = 1      # Flag = 1 means subject has responded, make this a default value!
 TARGETBAR   = True   # Showing target bar?? Set=0 to just show the target circle!
 TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
 TARGETTHICK = 0.008  # 16 cm target thickness
@@ -60,7 +61,7 @@ def quit():
 def playAudio (filename):
     subprocess.call(['aplay',"%s/audio/%s"%(mypwd,filename)])
     time.sleep(0.75)
-    print("---Finished playing %s..."%(filename))    
+    #print("---Finished playing %s..."%(filename))    
 
 
 def playInstruct (n):
@@ -126,6 +127,16 @@ def clickStart(event):
     dc['logfileID'] = "%s%i"%(dc["subjid"],dc["filenum"])
     dc['logpath']   = '%s/data/%s_data/'%(mypwd,dc["subjid"])
 
+    if somatic.get(): 
+        mymsg.set("Note: Starting Somatic WM Test (default)")
+        print("\nNote: Starting Somatic WM Test (default)\n")
+        dc['wmtest'],mybg = "Som","white"  
+    else: 
+        mymsg.set("Note = Starting Visuospatial WM Test .....")
+        print("\nNote = Starting Visuospatial WM Test .....\n")
+        dc['wmtest'],mybg = "Vis","black"
+    master.update()
+
     if not subjid.get() or not filenum.get():
         print("##Error## Subject ID and/or file numbers are empty!")
     else:
@@ -133,46 +144,38 @@ def clickStart(event):
         filepath = "%s/exper_design/%s/%s.txt"%(mypwd,subjid.get(),dc['logfileID'])             
         print filepath
         stages = read_design_file(filepath)   # Next stage depends if file loaded successfully
-        print "Press <Enter> or Quit-button to continue!\n"
-
-    # Added check to ensure existing logfile isn't overwritten
-    if somatic.get(): 
-        mymsg.set("Note: Starting Somatic WM Test (default)")
-        print("Note: Starting Somatic WM Test (default)\n")
-        dc['wmtest'],mybg = "Som","white"  
-    else: 
-        mymsg.set("Note = Starting Visuospatial WM Test .....")
-        print("Note = Starting Visuospatial WM Test .....\n")
-        dc['wmtest'],mybg = "Vis","black"
-    master.update()
 
     dc['logname'] = "%s%s_%s"%(dc['logpath'],dc['wmtest'],dc['logfileID'])
 
+    # If the existing logfile exists and design file hasn't been created, don't continue!
     if os.path.exists("%s.txt"%dc['logname']):
         mymsg.set("WARNING: Duplicate logfile detected!") 
         print "File already exists: %s.txt"%dc['logname']
         pass
 
-    else:       
-        chk.config(state='disabled')
-        e1.config(state='disabled')
-        e2.config(state='disabled')
-        getCenter()
-        goToCenter(MOVE_SPEED*2)
+    else:
+        if stages:
+          chk.config(state='disabled')
+          e1.config(state='disabled')
+          e2.config(state='disabled')
+          getCenter()
+          goToCenter(MOVE_SPEED*2)
     
-        # Using tag, update 'canvas' color depending on the type of test!
-        win.itemconfig("canvas", fill=mybg)
+          # Using tag, update 'canvas' color depending on the type of test!
+          win.itemconfig("canvas", fill=mybg)
 
-        if int(filenum.get()) == 0:
-            # This is only for filenum = 0, familiarization trials!
-            print("\nEntering Practice Block now.........")
-            runBlock(1)    
+          if int(filenum.get()) == 0:
+             # This is only for filenum = 0, familiarization trials!
+             print("\nEntering Practice Block now.........")
+             runBlock(1)    
+          else:
+             # Now start logging robot data: post, vel, force, etc... (11 columns)
+             #robot.start_log("%s.dat"%dc['logname'],11)
+	     # We're ready for the actual test
+             print("\nEntering Test Block now.........")
+             runBlock(0)	   
         else:
-            # Now start logging robot data: post, vel, force, etc... (11 columns)
-            #robot.start_log("%s.dat"%dc['logname'],11)
-	    # We're ready for the actual test
-            print("\nEntering Test Block now.........")
-            runBlock(0)	   
+	     pass
 
 
 def read_design_file(mpath):
@@ -181,6 +184,7 @@ def read_design_file(mpath):
         with open(mpath,'r') as f:
             dc['mydesign'] = json.load(f)
         print("Design file loaded! Parsing the data...")
+        print "Press <Enter> or Quit-button to continue!\n"  # Design file exists, continue!
         return 1
     else:
         print mpath
@@ -192,6 +196,7 @@ def read_design_file(mpath):
 def doAnswer(index):
     start_time = time.time()  # To count reaction time
     global ANSWERFLAG
+    ANSWERFLAG = 0  # Make this false so that we can record subject's response!
     print("Waiting for subject's response")
     while (not ANSWERFLAG):
         master.update_idletasks()
@@ -366,7 +371,7 @@ somatic = BooleanVar()
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
 
-caldata = os.popen('./robot/ParseCalData robot/cal_data.txt').read()
+caldata = os.popen('./ParseCalData cal_data.txt').read()
 #print caldata.split("\t")
 coeff = caldata.split('\t')
 
@@ -420,21 +425,23 @@ def mainGUI():
     myButton3.grid(row=1, column=1, padx = 10, pady = 5)
     
 
-def clickYes(): # GUI button click!
+def clickYes(): # Is "Yes" GUI button clicked?
     enterYes(True)
 
-def clickNo():
+def clickNo(): # Is "No" GUI button clicked?
     enterNo(True)
 
-def enterYes(event):
+def enterYes(event):  # detect keyboard press!
     global ANSWERFLAG
     print "Left key pressed to answer YES!"
+    if ANSWERFLAG: print("##Error## Wrong timing, button already pressed....")
     dc['answer']=1
     ANSWERFLAG = 1
 
 def enterNo(event):
     global ANSWERFLAG
     print "Right key pressed to answer NO!"
+    if ANSWERFLAG: print("##Error## Wrong timing, button already pressed....")
     dc['answer']=0
     ANSWERFLAG = 1
 
@@ -471,9 +478,9 @@ def showImage(name, px=w/2, py=h/2, delay=1.0):
 
 
 def showBox():
-    # Display the a box for visuospatial boundary in the screen coordinates
+    # Display the a box for visuospatial boundary just as an indicator for subjects
     # dc['c.scr'] is the center position in the screen coordinate
-    win.create_rectangle(400,750,*dc['c.scr'],dash=(2,10),width=3, outline="white",tag="myRect")
+    win.create_rectangle(600,600,*dc['c.scr'],dash=(2,10),width=3, outline="white",tag="myRect")
     win.create_oval(dc['c.scr'][0]-15,dc['c.scr'][1]-15, 
                     dc['c.scr'][0]+15,dc['c.scr'][1]+15,  
                     fill="white", width=0, tag="myCirc")
@@ -486,8 +493,8 @@ def showBox():
 
 
 master.bind('<Return>', clickStart)
-master.bind('<Left>'  , clickYes)
-master.bind('<Right>' , clickNo)
+master.bind('<Left>'  , enterYes)
+master.bind('<Right>' , enterNo)
 
 os.system("clear")
 

@@ -1,22 +1,11 @@
-#!/usr/bin/env python2
+"#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
 Created on Wed Aug 18 15:24:50 2017 @author: ae2010
 
-Revisions: Improved Reinforcement paradigm based on the discussion (Aug 18). Target bar and yellow line are removed. 
-We use an arc as a reference target that will only be shown during familiarization trials. In the actual trials, no visual 
-inputs will be displayed except the GO signal and the explosion to indicate the desired direction we want. Subjects
-will be asked to explore the wanted direction. Task is adjusted to be more Reinforcement and WM is probeds trial-by-trial!
+This new code does the motor copy test paradigm: subjects to repeat the trajectory presented to them.
+Revisions : Initial design (Oct 2)
 
-Revisions : Finalizing the working script (Aug 25)
-            Major clean up, making the code more readable; cleaning unnecessary logfile variables (Aug 29/30)
-            Introducing instruction audio files again (Sept 4)
-            Minor miscellaneous edits (Sept 11)
-            GUI: User has to select which lag and workspace. Filenum and experimental phase are fixed in the code (Sept 14)
-            Setting up the WM test portion again; incorporating this during practice session too (Sept 14)
-            Added a flag to prevent pressing LEFT/RIGHT twice. Cleaning up clutter on the terminal (Sept 21)
-            Minor edits (Oct 2)
-            Minor edits on trial-lag option and p_test(nn) function to reduce # WM trials (Nov 15)        
 """
 
 
@@ -24,7 +13,6 @@ import robot.interface as robot
 import numpy as np
 import os.path
 import time
-import json
 import math
 import random
 import subprocess
@@ -39,21 +27,11 @@ w, h   = 1920,1080    # Samsung LCD size
 
 # Supposed there are up to 4 lags in WM test, we ought to capture the trajectory up to
 # 4 movements prior. We also have a counter how many trials since the last TEST trial.
-nsince_last_test = 0
+test_angle = [-45,45] # Which side are we testing? Left/right?
 showFlag     = True   # Show yellow hand cursor position throughout (default: YES)
 dc["active"] = False  # Adding this flag to show that the test is currently active!!
-dc["responded"] = False  # To prevent user from responding twice during WM Test (Flag=1 means responded)
-test_angle = [-45,45] # Which side are we testing? Left/right?
-wm_lag = ["lag-1","lag-2","lag-3","lag-4"]  # The type of lag used in WM test
-
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-VER_SOFT = "2.0"
-NTRIAL_MOTOR = 30     # Relevant only for post-test
-NTRIAL_TRAIN = 60     # Training trials with feedback
-MINTRIAL_SET = 15     # Minimum trials before we set the actual target direction during Motor_Pre
-ROT_MAG = 5           # Value of rotation angle for WM Test.
-INIT_DIR_RANGE = 45   # Range in which participants can get the first explosion during Motor_Pre
 YCENTER     = -0.005  # Let's fixed the Y-center position!
 TARGETDIST  = 0.15    # move 15 cm from the center position (default!)
 START_SIZE  = 0.008   #  8 mm start point radius
@@ -61,12 +39,11 @@ CURSOR_SIZE = 0.003   #  3 mm cursor point radius
 WAITTIME    = 0.75    # 750 msec general wait or delay time 
 MOVE_SPEED  = 1.0     # duration (in sec) of the robot moving the subject to the center
 FADEWAIT    = 0.5     # fading duration for robot-hold/stay
-ARCEXTENT = 90        # How much the arc will span (degree)
+ARCEXTENT   = 90      # How much the arc will span (degree)
 
-# How big a window to use for smoothing (see tools/smoothing for details about the effects)
-SMOOTHING_WINDOW_SIZE = 9 
-SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
-
+# Define the test directions (degree). We divide the whole ARCEXTENT into 10 parts equally.
+# This also depends on which workspace, left/right. 
+SET_TESTDIR = np.array([0,9,18,27,36,45,54,63,72,81,90])  ## numpy!
 
 
 
@@ -144,45 +121,22 @@ def enterStart(event):
         print("##Error## Already active! -- aborting")
 	return
 
-    # First, check whether the entry fields have usable text (need subjID, a file number, etc.)
-    dc["filenum"] = int(filenum.get())
-
-    if not subjid.get() or not filenum.get().isdigit():
+    # First, check whether the entry fields have usable text (need subjID, etc.)
+    if not subjid.get():
         print("##Error## Subject ID and/or file numbers are empty or file number is not a digit!")
         return
 
     dc["active"]   = True   # flag stating we are already running
     dc["subjid"]   = subjid.get()
     dc['angle']    = vardeg.get()  # This is whether in the left or right workspace
-    dc['lag']      = varopt.get()
-    dc['logfileID']= "%s_%i"%(dc["subjid"],dc["filenum"])
-    dc['logpath']  = '%s/data/%s_data/'%(mypwd,dc["subjid"])
-    dc['logname']  = '%smotorLog_%s'%(dc['logpath'],dc['logfileID'])
-    dc['scores']   = 0    # have to reset the score to 0 for each run!
+    dc['phase']    = varopt.get()
+    dc['logfileID']= "%s_%s"%(dc["subjid"],dc["phase"])
+    dc['logpath']  = "%s/data/%s_data/"%(mypwd,dc["subjid"])
+    dc['logname']  = "%smotorCopy_%s"%(dc['logpath'],dc['logfileID'])
     dc['curtrial'] = 0    # initialize current test trial
     dc['subjd']    = 0    # initialize robot distance from the center of start position
     dc["PDmaxv"]   = np.nan
-    dc['target']   = np.nan   # NEW!!! This is the subject's unique direction
 
-    # [Sept 11] To prevent making a mistake in matching the file number and current task-block,
-    # I fix the pair. Example: file 01 is for pre-training, 02 to 04 for training, and 05 for post test
-    if (dc["filenum"] == 0): 
-        print ("\n### Familiarization phase + instruction\n")
-        dc['task'] = "instruct"
-    elif (dc["filenum"] in (1,6)): 
-        print ("\n### PRE_TRAINING phase\n")
-        dc['task'] = "pre_train"
-    elif (dc["filenum"] in (2,3,4,7,8,9)): 
-        print ("\n### TRAINING phase\n")
-        dc['task'] = "training"
-    elif (dc["filenum"] in (5,10)): 
-        print ("\n### MOTOR_POST phase\n")
-        dc['task'] = "motor_post"
-    else:
-        print ("\nWarning: File number out of range! Please check again....\n")
-        dc['task'] = []
-
- 
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
         print ("File already exists: %s.txt"%dc["logname"] )
@@ -192,88 +146,79 @@ def enterStart(event):
     # Disable the user interface so that the settings can't be accidentally changed.
     master.update()
 
-    # Do this if the task is not empty!
-    if dc['task']:
-       # Capture the center position for new subject or load an existing center position. 
-       # New subject has been instructed beforehand to place the hand in the center position.
-       getCenter()
-       # Go to the center position
-       goToCenter(MOVE_SPEED*1.5)
-       # Display the center (start) circle 
-       showStart()
-       GoSignal()
+    # Capture the center position for new subject or load an existing center position. 
+    # New subject has been instructed beforehand to place the hand in the center position.
+    getCenter()
+    # Go to the center position
+    goToCenter(MOVE_SPEED*1.5)
+    # Display the center (start) circle 
+    showStart()
+    GoSignal()
 
-       global traj_display
-       print "Cleaning the user interface canvas......"
-       # remove old trajectory from the GUI if it's there
-       if traj_display!=None: 
-          wingui.delete("traj")
+    global traj_display
+    print "Cleaning the user interface canvas......"
+    # remove old trajectory from the GUI if it's there
+    if traj_display!=None: 
+        wingui.delete(traj_display)
 
-       # Note: If we change number of blocks per session WE NEED TO CHANGE THIS!
-       dc['session'] = 1 if(dc['filenum'] < 6) else 2
+    # The new design doesn't use bias shift anymore. 
+    dc["baseline_pd_shift"] = 0  
+    dc['target_angle'] = 0
+    prepareCanvas()       # Prepare drawing canvas objects
 
-       # The new design doesn't use bias shift anymore. 
-       dc["baseline_pd_shift"] = 0  
-       dc['baseline_angle_shift'] = 0
-       prepareCanvas()       # Prepare drawing canvas objects
-
-       # We should first run instruction trials for a straightahead direction. 
-       # Once set, we're ready for the main or actual test (filenum > 0).
-       runPractice() if dc['task'] == "instruct" else runBlock()
-
-    else:
-       dc["active"] = False   # flag stating we are already running
+    # We should first run instruction trials for a straightahead direction. 
+    # Once set, we're ready for the main or actual test (filenum > 0).
+    runPractice() if dc['phase'] == "Instruct" else runBlock()
 
 
+def angle_pos(theta):
+    """ Convert endpoint target direction to robot coordinates w.r.t center position.
+        At the same, this will draw the target on the user's wingui for illustration purpose.
+    """
+    theta_rad = theta*math.pi/180   # First, convert theta to radian
+    targetX = TARGETDIST * math.cos(theta_rad) + dc['cx']
+    targetY = TARGETDIST * math.sin(theta_rad) + dc['cy']
 
-def read_design_file(mpath):
-    """ Based on subj_id & block number, read experiment design file!"""
-    if os.path.exists(mpath):
-    	with open(mpath,'r') as f:
-            dc['mydesign'] = json.load(f)
-        #print dc['mydesign']
-        print("Design file loaded! Parsing the data...")
-        return 1
-    else:
-        print mpath
-        print("##Error## Experiment design file not found. Have you created one?")
-        return 0
+    # Then draw where the target is so that we can see on the wingui!
+    xtarget, ytarget = rob_to_gui(targetX,targetY)
+    wingui.create_oval(*[xtarget-5,ytarget-5,xtarget+5,ytarget+5],width=2,fill="red",tag="motortarget")
+    samsung.update()
+
+    # Finally, move the robot to the designated target position!
+    print("  Moving to %f, %f"%(targetX,targetY))
+    robot.move_stay(targetX, targetY, MOVE_SPEED)
+    master.update()
+    print("  Movement completed!")
 
 
+
+
+# Run only for the first time: familiarization trials with instructions. 
 # This simple block is executed in sequence...
-def runPractice2():
+def runPractice():
     print "FINISH!"
     dc["active"] = False     # flag stating we are already running
     showImage("curves_R.gif",550,-30,3)
 
-
-def runPractice():
-    """ This is a function created for familiarization trials with instructions. 
-    """
+def runPractice2():
     global repeatFlag
     global showFlag
-    # Define reward width for our target arc. For practice session, define it as NaN.
-    dc["reward_width_deg"] = np.nan   # >> Don't make it too small, too tough!
-
     x,y = robot.rshm('x'),robot.rshm('y')
     showCursorBar((x,y))
-    showTarget(dc['angle'])     # Show the target arc at this point
-
-    triallag = dc['lag'].split('-')[1]  # This is for WM test
-    triallag = int(triallag) # Ensure this is numeric!  
 
     playInstruct(0)  # added Sept 11 for the opening speech...
 
     #----------------------------------------------------------------
     print("\n--- Practice stage-1: Move towards the target arc")
     showFlag = True
+    showTarget(dc['angle'])     # Show the target arc at this point
 
     # Show how to move forward and how the robot brings the arm back.
     playInstruct(1)
     to_target()
     playInstruct(2)
-    showImage("curves_L.gif",570,-30,3) if dc['angle'] > 0 else showImage("curves_R.gif",570,-30,3)
-    return_toStart(triallag)
+    showImage("curves_L.gif",550,-30,3) if dc['angle'] > 0 else showImage("curves_R.gif",550,-30,3)
+    return_toStart()
     playInstruct(3)
 
     # 20 trials for the subjects to familiarize with the target distance + speed
@@ -283,7 +228,7 @@ def runPractice():
         # This is the point where subject starts to move to the target
         to_target()    
         # Go back to center and continue to the next trial.
-        return_toStart(triallag)
+        return_toStart()
         each_trial = each_trial + 1
 
     goToCenter(MOVE_SPEED) # Bring the arm back to the center first
@@ -293,7 +238,6 @@ def runPractice():
     showFlag = False
 
     print("\n--- Practice stage-2: Occluded arm, yellow cursor off!\n")
-    dc['task'] = "motor_post"
     playInstruct(4)
 
     print("\n###  Press <Esc> after giving the instruction...")
@@ -310,7 +254,7 @@ def runPractice():
         print("\nNew Round %i ----------------- "%each_trial)
         to_target()    
         # Go back to center and continue to the next trial.
-        return_toStart(triallag)
+        return_toStart()
         each_trial = each_trial + 1
 
 
@@ -339,42 +283,33 @@ def runPractice():
     playInstruct(8)
     # Show what rotated trajectory means. This depends on whether left/right workspace.
     if dc['angle'] > 0:
-	showImage("own_L1.gif",550,0,1.5)
-	showImage("own_L2.gif",550,0,4)
+	showImage("own_L1.gif",550,0,1)
+	showImage("own_L2.gif",550,0,3)
 	showImage("own_L3.gif",550,0,1)
-	showImage("own_L4.gif",550,0,2) 
-	showImage("own_L5.gif",550,0,2) 
+	showImage("own_L4.gif",550,0,3) 
     else:
-        showImage("own_R1.gif",550,0,1.5)
-     	showImage("own_R2.gif",550,0,4)
+        showImage("own_R1.gif",550,0,1)
+     	showImage("own_R2.gif",550,0,3)
     	showImage("own_R3.gif",550,0,1) 
-	showImage("own_R4.gif",550,0,2) 
-    	showImage("own_R5.gif",550,0,2)
+    	showImage("own_R4.gif",550,0,3)
 
     playInstruct(9)
 
-    print("###  Press <Esc> after giving the instruction...")   
-    global nsince_last_test
-    nsince_last_test = 0 
+    print("###  Press <Esc> after giving the instruction...")    
     repeatFlag = True
     while repeatFlag:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 msec
         
-    dc['task'] = "training"
-    dc["reward_width_deg"] = np.nan
-    #triallag = 1 if dc['lag'] == "lag-1" else 2
-
     for each_trial in range(1,16):
         dc['curtrial'] = each_trial
         print("\nNew Round %i ----------------- "%each_trial)
         to_target()
-        return_toStart(triallag)
+        return_toStart()
         each_trial = each_trial + 1
     
     print("\n\n#### Instruction block has ended! Continue with the actual experiment?? \n")
-    showTarget(dc['angle'])     # Show the target arc at this point
     dc["active"] = False    # flag stating we are already running
 
 
@@ -383,65 +318,50 @@ def runPractice():
 def runBlock():
     """ The actual test runs once 'Start' or <Enter> key is pressed """
 
-    # We don't use bias shift anymore here. Also, reward zone has a fixed 13 mm width at 15 cm (~5 deg).
-    dc["reward_width_deg"] = 5   # >> Don't make it too small, too tough!
-
+    global repeatFlag  # This is a pause to remind subjects what to do before start the actual test!
     global showFlag
     showFlag = False
     showTarget(dc['angle'], "black")  # Don't show the target arc now
 
     print("\n### Kindly press <Esc> to continue......\n\n")
-    global repeatFlag  # Pause to remind subjects what to do before start the actual test!
     repeatFlag = True
     while repeatFlag:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 msec
 
-    # Read the lag setting from the GUI. This decides the type of WM test lag.
-    triallag = dc['lag'].split('-')[1]
-    triallag = int(triallag) # Ensure this is numeric!
-
     saveLog(True)    # Write column headers in the logfile (Jun9)   
 
-    dc['baseline_angle_shift'] = sangle.get()
-    
-    ntrial = NTRIAL_TRAIN if dc['task'] in ("pre_train", "training") else NTRIAL_MOTOR
-    
-    print ("Starting %s in the %d workspace, with WM test %s"%(dc['task'],dc['angle'],dc['lag']))
-
-    global nsince_last_test
-    nsince_last_test = 0
 
     # Now start logging robot data: post, vel, force, trial_phase; 11 columns
     robot.start_log("%s.dat"%dc['logname'],11)
-    
-    # Added so that we can separate aimless reaching and actual training
-    each_trial = 1
-    while dc['task'] == 'pre_train':
-       dc['curtrial'] = each_trial
-       print("\nNew Round %i ----------------- "%each_trial)
-       to_target()                   # Part 1: Reaching out to target
-       return_toStart(triallag)      # Part 2: Moving back to center
-       saveLog()                     # Finally, save the logged data
-       each_trial = each_trial + 1     
-
+ 
     # ---------------- RUNNING FOR EACH TRIAL IN THE BLOCK ------------------
-    each_trial = 1
-    while each_trial < ntrial+1:
-        dc['curtrial'] = each_trial
-        print("\nNew Round %i ----------------- "%each_trial)
-        to_target()                   # Part 1: Reaching out to target
-        return_toStart(triallag)      # Part 2: Moving back to center
-        saveLog()                     # Finally, save the logged data 
-        each_trial = each_trial + 1 
+    theta = 45
+    each_trial = 0
+    for i in range(2): # Repeat the set twice!
+        # Generate test directions (which workspace?)
+        testdir=180-SET_TESTDIR if dc['angle'] > 0 else 90-SET_TESTDIR
+        # Then, shuffle the members inside it
+        random.shuffle(testdir)
+        for theta in testdir:  # Cycle through each test direction!
+           each_trial = each_trial + 1
+           dc['curtrial'] = each_trial
+           dc['target_angle'] = theta  # This is the subject's target direction!!
+       	   print("\nNew Round %i, moving to %d ----------------- "%(each_trial,theta))
+           time.sleep(WAITTIME*1.2) 
+           angle_pos(theta)       # Part 1: Robot brings the arm out to target
+           return_toStart()       # Part 2: Moving back to center
+           to_target()            # Part 3: Reaching out to target
+           return_toStart()	  # Part 4: Moving back to center
+           saveLog()              # Finally, save the logged data
+           wingui.delete("motortarget")
 
     # ----------------------------------------------------------------------
-    print("\n\n#### Test has ended! You may continue with the NEXT block or QUIT now.....\n")
+    print("\n\n#### Test has ended! Kindly QUIT the program now.....\n")
     
     robot.stop_log()   # Stop recording robot data now!
-    showTarget(dc['angle'])     # In between blocks, show target arc!
-
+    time.sleep(2)
     #robot.stay_fade(dc['cx'],dc['cy'])  # Commented this, we still want to activate robot_stay!
     master.update()
     dc["active"] = False    # allow us running a new block
@@ -517,7 +437,7 @@ def to_target():
                 master.update()
                 dc['speed'] = 1000*(time.time() - start_time)
                 print("  Movement duration = %.1f msec"%(dc['speed']))
-                filter_traj()   # Filter the captured trajectory (when stop capturing!)
+                list_traj()   # Filter the captured trajectory (when stop capturing!)
 
             ## Revised = 2 second timeout if one cannot/never reach the target.....
             if (time.time()-start_time) > 2:
@@ -526,7 +446,7 @@ def to_target():
                 time.sleep(0.1)
                 
         elif robot.rshm('fvv_trial_phase')==3:
-            # (6) Once reached the target, check end-point accuracy. Angle here means workspace direction.
+            # (6) Once reached the target, check end-point accuracy
             checkEndpoint(dc['angle'])
             master.update()
             reach_target = True  # To quit while-loop!
@@ -541,91 +461,30 @@ def to_target():
             samsung.update()
 
 
-
-def return_toStart(triallag):
+def return_toStart():
     """ This handles the segment when hand position moves back to the center (start). It depends 
     on whether the current block is training block, and current trial is a WM test trial.
     """
     
-    if "most.recent.traj" in dc: ############################
-	#print("Drawing previous trajectory")
-	# Draw the trajectory, the most recent one!
+    if "most.recent.traj" in dc: # Check whether the key is present in dict!
 	trajectory = dc["most.recent.traj"]
  	# downsample the list a little and convert to screen coordinates
-  	coords = [ rob_to_gui(x,y) for (x,y) in trajectory[::10] ] 
-
+  	coords = [ rob_to_gui(x,y) for (x,y) in trajectory[::20] ] 
     	global traj_display
-	if traj_display!=None: # remove old trajectory from the GUI if it's there
-	    #wingui.delete(traj_display)
-            wingui.itemconfig(traj_display,fill="gray",width=1)  # or make it grey!
+        if traj_display!=None:
+            wingui.itemconfig(traj_display,fill="#1F1F1F",width=1)
 
         # draw a new line with a tag...
     	traj_display = wingui.create_line(*coords,fill="green",width=3,tag="traj")
+        # also now delete the red target
+        samsung.update()
 
-    global nsince_last_test
+    # (8) Return to the center!
+    time.sleep(WAITTIME)
+    goToCenter(MOVE_SPEED)
     
-    # Check if this is a training block and if the next trial is test trial to replay 
-    # trajectory with a certain probability. WM Test only happens during training! 
-
-    if (dc['task'] == "training") & (random.random() < p_test(nsince_last_test)): 
-       master.update()
-       # First, retrieve the desired test trajectory to replay...
-       select_traj(triallag)
-       # Then get the first element indicating where to start the replay
-       firstx,firsty = dc['ttraj'][0]
-       print("\nMoving to starting point %f, %f\n"%(firstx,firsty))
-       #print traj[150]
-       #print traj[210]
-       #print traj[230]
-            
-       # Note: If the next trial is a replay, it should go instead to 
-       # the first position recorded, not the center position.
-       robot.move_stay(firstx, firsty, MOVE_SPEED)
-       showImage("test_trial.gif",700,150,1.5)
-            
-       # If this is test trial, now replay the rotated trajectory [left/right]
-       time.sleep(0.5)
-       replay_traj(True)
-            
-       # (7) Wait for subject's response, then go back to the center position!
-       dc["responded"] = False     # make this false so that a new respond can be recorded
-       RT = doAnswer()
-       goToCenter(MOVE_SPEED*0.9)
-       nsince_last_test = 0
- 
-    else: # (8) Return to the center immediately if NOT a replay or NOT a training block.
-       nsince_last_test = nsince_last_test + 1
-       #print nsince_last_test
-       goToCenter(MOVE_SPEED)
-       dc['ref'], dc['answer'], RT = 'no_wm','no_wm',0
-
-    # (9) We concatenate the logfile content with the WM test response
-    dc['logAnswer'] = "%s,%d,%s,%s,%s,%d,%d,%s\n"%(dc['logAnswer'],triallag,dc['ref'],dc['answer'],dc['task'],RT,ROT_MAG,VER_SOFT)
- 
             
 
-# This function computes the PD at the max velocity during movement! [Jun19]
-def kinmax():
-    """ This function is deprecated, courtesy of FVV July; the reason is
-    that we need to know only the (x,y) at maximum velocity; the rest, angles
-    etc we can calculate after the trial has ended. """
-    #dc['subjxmax'], dc['subjymax'] = robot.rshm('x'),robot.rshm('y')
-    #global angle  
-
-    # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
-    # The return values are in the robot coordinates
-    #trotx,troty  = rotate([(dc['subjxmax'], dc['subjymax'])], (dc['cx'],dc['cy']), -angle)[0]
-    #PDy   = trotx-dc['cx']
-    #dc['PDmaxv'] = PDy
-
-    ## Compute angular deviation. Note: Should use trot as well!
-    #dc['Theta_maxv'] = math.atan2(troty,trotx)*180/math.pi - (angle+90)
-    #dc['Theta_maxv'] = math.atan2(troty,trotx)*180/math.pi - (angle+90)  # w.r.t to ideal direction
-    #print "PDy at maximum velocity %f"% PDy
-    #print "Angle at maximum velocity %f"% dc['Theta_maxv']
-    pass
-
-                
 
 # This function saves logfile and mkdir if needed. 
 # Column header is written only at the beginning! Change/add the field names if required.
@@ -638,94 +497,8 @@ def saveLog(header = False):
             log_file.write(dc['logAnswer'])  # Save every trial as text line
         else:
             print("Creating logfile header.....")
-            log_file.write("%s\n"%("Trial_block,direction,boom,amount_shifted_deg,x_end,y_end,"\
-            "speed,x_maxv,y_maxv,PDy,PDy_shifted,angle_end_shift,angle_maxv_deg,angle_maxv_shift,reward_width_deg,"\
-            "session,lag,ref_answer,subj_answer,task,WM_RT,rot_angle,version"))
+            log_file.write("%s\n"%("trial,workspace,target_dir,x_end,y_end,speed,x_maxv,y_maxv,PDy,PDy_shifted,angle_end_shift,angle_maxv_deg,angle_maxv_shift"))
 
-
-def doAnswer():
-    start_time = time.time()  # To count reaction time
-    print("Waiting for subject's response")
-    while (not dc['responded']):
-        master.update_idletasks()
-        master.update()
-        time.sleep(0.3)
-    RT = 1000*(time.time() - start_time)  # RT in m-sec
-    print "--- RESPONSE: %s    RT:%d"%(dc['answer'],RT)
-    return(RT)
-
-
-def select_traj(dd=1):
-   """ This is to select which of the previous trajectory to play [ananda, May2017]
-   The way it works is as follows: suppose nsince_last_test=4, then: 
-         lag-1 trial corresponds to replaying 'traj3', nsince_last_test=4 
-         lag-2 trial corresponds to replaying 'traj2', nsince_last_test=3 
-         lag-3 trial corresponds to replaying 'traj1', nsince_last_test=2 
-         lag-4 trial corresponds to replaying 'traj0', nsince_last_test=1 
-   To avoid getting out of index, we set the maximum lag to nsince_last_test
-   """
-   global nsince_last_test
-   if dd > nsince_last_test: dd = nsince_last_test
-   #print nsince_last_test
-   #print dd
-   t = nsince_last_test - (dd-1)
-   print ("\nRetrieving trajectory %d"%(t))
-   dc['ttraj'] = dc['traj%d'%t]
-
-
-
-def replay_traj(rotate_flag = True):
-    """ This function handles the replay of the trajectory. Depending whether
-    rotate_flag is True, it will either play the normal or rotated trajectory.
-    After each replay, it will also bring the subject hand back to center."""
-
-    # First, get the Test Trajectory to play from the dict.
-    traj = dc['ttraj']
-
-    if rotate_flag:
-        # Flip coin whether +5deg or -5deg rotation. Convention: Positive angle is CCW (to the left) !!! 
-        rot_angle = random.choice([-1,1]) * ROT_MAG 
-        traj_rot  = rotate(traj, (dc['cx'],dc['cy']), rot_angle)
-        print("ROTATING the trajectory in robot coords, %d degree"%(rot_angle))
-        # The rotated trajectory is in the list of tuples....
-        #print traj_rot[150]
-        #print traj_rot[210]
-        #print traj_rot[230]
-        
-        # Push the clean trajectory back to the robot memory for replaying 
-        # (and set the final positions appropriately)
-        robot.prepare_replay(traj_rot)
-        dc['ref'] = 'left' if(np.sign(rot_angle) > 0) else 'right'
-
-    else:
-        robot.prepare_replay(traj) # Normal, unrotated
-
-    #print("Ready to start replaying trajectory...")
-    #raw_input("Press <ENTER> to start")
-    time.sleep(0.5)
-    robot.start_replay()
-
-    while not robot.replay_is_done():
-        master.update()
-        pass
-
-    time.sleep(WAITTIME)
-    print("Finished replaying the trajectory...")
-            
-    # Important: Don't forget to return to the center position again!!
-    firstx,firsty = traj[0]
-    print("\nMoving to starting point %f, %f\n"%(firstx,firsty))
-    robot.move_stay(firstx, firsty, MOVE_SPEED)
-    time.sleep(WAITTIME)
-
-
-
-def p_test(nn):  # nn = number of trials since the last WM test trial
-    if   nn<6: return 0
-    elif nn==6: return 0.1
-    elif nn==7: return 0.3
-    elif nn==8: return 0.5
-    else: return 0.8
     
 
 def velocity_check(x,y):
@@ -747,72 +520,16 @@ def velocity_check(x,y):
     #print max(j)
 
 
-def filter_traj():
-    """ This function first retrieves the trajectory from the robot memory, then
-    filter them using a smooth function. The filtered (x,y) positions are then
-    passed to a dict variable with a certain key. This key is important because
-    it indicates which lag the captured trajectory is w.r.t current trial.
-    """    
-    global nsince_last_test
-    print("Filtering raw trajectory %d..."%nsince_last_test)
+
+def list_traj():
     raw_traj = list(robot.retrieve_trajectory()) 
     #robot.prepare_replay(raw_traj)
     # separate them into x and y component
     x,y = zip(*raw_traj)
-    #velocity_check(x,y)
-    # Smooth it
-    xfilt,yfilt = smooth(x),smooth(y)
 
     # Trick: save it with a key name according to nsince_last_test
-    filtered_traj = list(zip(xfilt,yfilt))
-    robot.prepare_replay(filtered_traj) # send the smoothed trajectory to the robot to be replayed (later)
-    dc["traj%d"%(nsince_last_test)] =  filtered_traj
+    filtered_traj = list(zip(x,y))
     dc["most.recent.traj"]=filtered_traj
-
-
-def smooth_window(x,window):
-    """Smooth the data using a window with requested size   [From: Floris]
-    This method is based on the convolution of a scaled window with the signal.
-    The signal is prepared by introducing reflected copies of the signal 
-    (with the window size) in both ends so that transient parts are minimized
-    in the begining and end part of the output signal.
-
-    Arguments
-        x: the input signal 
-        window: the window function (for example take numpy.hamming(21) ) 
-
-    output:
-        the smoothed signal
-        
-    original source:  http://scipy-cookbook.readthedocs.io/items/SignalSmooth.html 
-    adjusted by FVV to make Python3-compatible and ensure that the length of the output 
-    is the same as the input.
-    """
-
-    wl = len(window)
-    if x.ndim != 1: raise ValueError( "smooth only accepts 1 dimension arrays.")
-    if x.size < wl: raise ValueError("Input vector needs to be bigger than window size.")
-    if wl<3: return x
-
-    # Pad the window at the beginning and end of the signal
-    s=np.r_[x[wl-1:0:-1],x,x[-2:-(wl+1):-1]]
-    # Length of s is len(x)+wl-1+wl-1 = len(x)+2*(wl-1)
- 
-    ## Convolution in "valid" mode gives a vector of length len(s)-len(w)+1 
-    ## assuming that len(s)>len(w) 
-    y=np.convolve(window/window.sum(),s,mode='valid')
-    
-    ## So now len(y) is len(s)-len(w)+1  = len(x)+2*(wl-1) - len(w)+1
-    ## i.e. len(y) = len(x)+len(w)-1
-    ## So we want to chop off len(w)-1 as symmetrically as possible
-    frontw = int((wl-1)/2)   # how much we want to chop off on the front
-    backw  = (wl-1)-frontw   # how much we want to chop off on the back
-    return y[frontw:-backw]
-
-
-def smooth(x):
-    """ Smooth the signal x using the specified smoothing window. """
-    return smooth_window(np.array(x),SMOOTHING_WINDOW)
 
 
 
@@ -822,8 +539,6 @@ def checkEndpoint(angle):
     Additionally, the function WRITES trial information into the logfile.
 
     """
-    # Important... Let's check whether we are supposed to give feedback or not. 
-    feedback = 0 if dc['task'] in ("pre_train","motor_post") else 1
     #print("  Checking end-position inside target zone?")
     
     # Now let's first look at the subject movement endpoint.
@@ -843,60 +558,23 @@ def checkEndpoint(angle):
 
     # Compute angular deviation at movement endpoint!
     dc['angle_end_deg'] = math.atan2(Y_end,X_end)*180/math.pi - 90 - angle # in degree
+    print (dc['angle_end_deg'])
     if dc["angle_end_deg"]<-180: dc["angle_end_deg"]+=360
 
     # Compute the PDy value after applying the baseline shift (if applicable)
     PDy_shift =  PDy - dc["baseline_pd_shift"]
     dc['PDend'] = PDy_shift
     
-    # Let's check whether we are within INIT_DIR_RANGE/2 around the 45 degree angle.
-    # We will only update the center of the reward zone if this is true!
-    is_within_range = dc['angle_maxv_deg'] < INIT_DIR_RANGE/2 and dc['angle_maxv_deg'] > -1*INIT_DIR_RANGE/2 
-    
-    # NEW: A special case is during Motor_Pre when ntrial reaches MINTRIAL_SET >>>>>>>>>>>>>
-    #       (1) Then capture the angle/direction of that trial to be the desired test direction!
-    #       (2) Show explosion indicating that it's gonna be the test direction.
-    # If we are during pre, AND after a certain number of trials, AND within the range we defined, 
-    # let's update the center of the reward zone! :) 
-    if dc['task'] == "pre_train" and dc['curtrial'] > MINTRIAL_SET and is_within_range:
-        dc['task'] = 'training'
-        feedback = 1 
-        dc['baseline_angle_shift'] = dc['angle_maxv_deg'] # Set current movement angle (w.r.t 45 degrees) as the new reward center.
-        dc["baseline_pd_shift"] = PDy
-        print("\n[Note:] Cool! Taking the new subject's bias:  %.2f deg\n"%(dc['baseline_angle_shift']))
-        sangle.set("%.2f"%dc['baseline_angle_shift']);
-        
-        # Before we give WM Test, reset the number of trials since the last WM test.
-        global nsince_last_test
-        nsince_last_test = 0
- 
-        
-    dc['angle_maxv_shift'] = dc['angle_maxv_deg'] - dc['baseline_angle_shift']
-    dc['angle_end_shift']  = dc['angle_end_deg']  - dc['baseline_angle_shift']
+    # Target direction. Here my convention is w.r.t to the straight-ahead, 90deg direction.
+    dc['angle_maxv_shift'] = dc['angle_maxv_deg'] - (dc['target_angle'] - 90 - angle)
+    dc['angle_end_shift']  = dc['angle_end_deg']  - (dc['target_angle'] - 90 - angle)
 
     # Ananda added PDmaxv and angular deviation.
-    #print "Theta at max velocity          = %.2f deg" % dc['angle_maxv_deg']
-    print "Theta at max velocity, shifted = %.2f deg" % dc['angle_maxv_shift']
-    print "Theta at endpoint, shifted     = %.2f deg" % dc['angle_end_shift']
+    print "Theta at max velocity w.r.t. target = %.2f deg" % dc['angle_maxv_shift']
+    print "Theta at endpoint w.r.t target      = %.2f deg" % dc['angle_end_shift']
 
-    # Show explosion? Check the condition to display explosion when required.
-    if feedback and abs(dc["angle_maxv_shift"]*2) < dc["reward_width_deg"]:
-        # This trial got rewarded!
-        #if dc['angle_maxv_shift'] > rbias[0] and dc['Theta_maxv_shift']< rbias[1] and feedback:
-        status = 1  # 1: rewarded, 0: failed
-        dc['scores'] = dc['scores'] + 10
-        print ("  EXPLOSION!  Current score: %d"%(dc['scores']))
-        playAudio("explo.wav")
-        showImage("Explosion_final.gif",900,130,1)   # Show booms for 3 sec!
-        showImage("score" + str(dc['scores']) + ".gif",930,260,0.5)
-    else:
-        # This trial does not get rewarded
-        time.sleep(WAITTIME)
-	status = 0
-
-    # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
-    dc['logAnswer'] = "%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%f,%d"% \
-                      (dc['curtrial'],dc['angle'],status,dc['baseline_angle_shift'],X_end,Y_end,dc['speed'],dc["subjxmax"],dc["subjymax"],PDy,PDy_shift,dc['angle_end_shift'],dc['angle_maxv_deg'],dc['angle_maxv_shift'],dc['reward_width_deg'],dc['session'])
+    dc['logAnswer'] = "%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n"% \
+                      (dc['curtrial'],dc['angle'],dc['target_angle'],X_end,Y_end,dc['speed'],dc["subjxmax"],dc["subjymax"],PDy,PDy_shift,dc['angle_end_shift'],dc['angle_maxv_deg'],dc['angle_maxv_shift'])
 
 
 
@@ -910,7 +588,7 @@ samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
                       # Interesting, you shouldn't have 2 Tk() instances, use Toplevel()
 	              # and this will solve the problem of pyimage not displayed
 
-master.geometry('%dx%d+%d+%d' % (550, 540, 500, 200)) # Nice GUI setting: w,h,x,y   
+master.geometry('%dx%d+%d+%d' % (550, 500, 500, 200)) # Nice GUI setting: w,h,x,y   
 master.title("Reward-based Sensorimotor Learning")
 master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
 
@@ -925,14 +603,8 @@ playwav = BooleanVar()
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
 
-# This performs the coeff readout directly instead of hardcoding the coeff values.
-caldata = os.popen('./ParseCalData cal_data.txt').read()
-#print caldata.split("\t")
-coeff = caldata.split('\t')
-
-#coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
-
-
+### Updated coefficient we just moved to a new lab!
+coeff = "1.004991e+03,1.848501e+03,4.531727e+02,2.106822e+02,1.877361e+03,1.084496e".split(',')
 
 def rob_to_screen(robx, roby):
     px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
@@ -968,10 +640,10 @@ def mainGUI():
     e1.grid(row=0, column=1)
     #e1.insert(END, "aes")
     e1.focus()
-    Label(topFrame, text="File Number: ").grid(row=0, column=2, padx=(20,0), sticky=E)
-    e2 = Entry(topFrame, width = 4, bd =1, textvariable = filenum)
-    e2.grid(row=0, column=3, sticky=W)
-    e2.insert(END, "0")
+
+    # Check button for playing instruction audio? --------------
+    chk = Checkbutton(topFrame, text=" Play Audio?", variable=playwav)
+    chk.grid(row=0, column=2, padx=(20,0), sticky=E)
     
     # Entry widget for 2nd row --------------
     Label(topFrame, text="Workspace: ").grid(row=1, column=0, sticky=E)
@@ -979,21 +651,10 @@ def mainGUI():
     e6.grid(row=1, column=1, columnspan=2, sticky=W, pady=8)
     vardeg.set("45")      # set default value
 
-    # Entry widget for 3rd row --------------
-    Label(topFrame, text="WM Test Lag: ").grid(row=1, column=2, padx=(20,0), sticky=E)
-    e4 = OptionMenu(topFrame, varopt, *wm_lag, command=OptionSelectEvent)
+    Label(topFrame, text="Test phase: ").grid(row=1, column=2, padx=(20,0), sticky=E)
+    e4 = OptionMenu(topFrame,varopt,"Instruct","Pre","Post",command=OptionSelectEvent)
     e4.grid(row=1, column=3, columnspan=3, sticky=W)
-    varopt.set("lag-1")      # set default value
-
-    # Entry widget for 4th row --------------
-    Label(topFrame, text="Test Direction: ").grid(row=2, sticky=E)
-    e5 = Entry(topFrame, width=8, bd =1, textvariable = sangle)
-    e5.grid(row=2, column=1, columnspan=3, sticky=W, pady=8)
-    sangle.set("0")
-
-    # Check button for playing instruction audio? --------------
-    chk = Checkbutton(topFrame, text=" Play Audio?", variable=playwav)
-    chk.grid(row=2, column=2, padx=(20,0), sticky=E)
+    varopt.set("Pre")      # set default value
 
     # Create buttons ---------------
     myButton1 = Button(bottomFrame, text="START", bg="#0FAF0F", command=clickStart)
@@ -1034,7 +695,7 @@ def OptionSelectEvent(event):
     # the type of test parameters, e.g. angle.
     dc['angle'] = vardeg.get()
     dc['lag']   = varopt.get()
-    print ("You have selected %s workspace and WM test %s"%(dc['lag'],dc['angle']))
+    print ("You have selected %s phase with %s-deg workspace"%(dc['lag'],dc['angle']))
     #e5.config(state='normal') if (temp[0]=="training") else e5.config(state='disabled')
 
 
@@ -1089,16 +750,14 @@ def prepareCanvas():
 
     # NOTE [Aug 18]: The new paradigm uses a target arc, not target bar anymore!
     win.create_arc([0,0,1,1], extent=-180, style=ARC, tag="target")
-
     win.create_polygon([0,0,0,1,1,1,0,0], fill="black", width = 15, tag="handbar")
     win.create_oval   ([0,0,1,1], width=1, fill="black", tag="targetcir")
     win.create_oval   ([0,0,1,1], width=1, fill="black", tag="hand")
-
     samsung.update()   # Update the canvas to let changes take effect
 
     # Also create a target in the experimenter's GUI [updated Aug 18!]
     wingui.create_arc([0,0,1,1], extent=180, style=ARC, tag="target")
-
+   
 
 
 def showCursorBar(position, color="yellow"):

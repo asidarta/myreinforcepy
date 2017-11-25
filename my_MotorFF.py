@@ -488,11 +488,12 @@ playAudio = BooleanVar()
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
 
-#caldata = os.popen('./robot/ParseCalData robot/cal_data.txt').read()
+# This performs the coeff readout directly instead of hardcoding the coeff values.
+caldata = os.popen('./ParseCalData cal_data.txt').read()
 #print caldata.split("\t")
+coeff = caldata.split('\t')
 
-coeff = "1.004991e+03,1.848501e+03,4.531727e+02,2.106822e+02,1.877361e+03,1.084496e".split(',')
-## WARNING: THESE COEFFICIENTS ARE ACTUALLY OFF (NEED TO RE-COMPUTE THEM)
+#coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
 
 
 def rob_to_screen(robx, roby):

@@ -24,7 +24,8 @@ Revisions: Adding a feature to replay the trajectory while the subject remains p
 
 import robot.interface as robot
 import numpy as np
-import os.path
+#import os.path
+import os
 import time
 import json
 import math
@@ -413,10 +414,11 @@ def runPractice():
 def runBlock():
     """ The actual test runs once 'Start' or <Enter> key is pressed """
 
-    global repeatFlag  # This is a reminder what to do before start the actual test!
-    repeatFlag = True
     print("\n\n###  WARNING: If this is a Training or Motor_Post block, ensure that the Test Angle,")
     print("###  Baseline Bias, and Reward Width are properly set! Kindly press <Esc> to continue......\n\n")
+
+    global repeatFlag  # Pause to remind what to do before start the actual test!
+    repeatFlag = True
     while repeatFlag:
         master.update_idletasks()
         master.update()
@@ -702,7 +704,7 @@ def select_traj(dd=1):
    #print nsince_last_test
    #print dd
    t = nsince_last_test - (dd-1)
-   print "Retrieving trajectory %d"%(t)
+   print "\nRetrieving trajectory %d"%(t)
    dc['ttraj'] = dc['traj%d'%t]
 
 
@@ -733,7 +735,7 @@ def replay_traj(rotate_flag = True):
     else:
         robot.prepare_replay(traj) # Normal, unrotated
 
-    print("Ready to start replaying trajectory...")
+    #print("Ready to start replaying trajectory...")
     #raw_input("Press <ENTER> to start")
     time.sleep(0.5)
     robot.start_replay()
@@ -869,7 +871,7 @@ def checkEndpoint(angle, feedback):
     trotx,troty  = rotate([(tx,ty)], (dc['cx'],dc['cy']), -angle)[0]
 
     # CONVENTION: -ve value means error to the left (CCW), +ve means error to the right (CW).\
-    # PDy is computed as the lateral deviation at the movement endpoint
+    # PDy is computed as the lateral deviation at the movement endpoint w.r.t +/-45 deg direction
     PDy   = trotx-dc['cx']
 
     tzx,tzy = tx-dc["cx"],ty-dc["cy"] # translate the subject endpoint so that it is relative to the starting point
@@ -880,7 +882,7 @@ def checkEndpoint(angle, feedback):
     # target line and with positive angles meaning counter-clockwise deviation.
     # So notice here no shift is being applied yet; this is a fairly raw angle.
     #dx,dy = dc["subjxmax"],dc["subjymax"] # compute the vector from the center to the vmax point
-    dc['angle_maxv_deg'] = math.atan2(dc["subjymax"],dc["subjxmax"])*180/math.pi - 90 - angle # compute the angle of that vector in radians
+    dc['angle_maxv_deg'] = math.atan2(dc["subjymax"],dc["subjxmax"])*180/math.pi - 90 - angle # compute the angle of that vector in degree
     if dc["angle_maxv_deg"]<-180: dc["angle_maxv_deg"]+=360
 
     # Now shift the angle so that zero means the center of the target area.
@@ -968,7 +970,12 @@ playAudio = BooleanVar()
 
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
-coeff = "1.004991e+03,1.848501e+03,4.531727e+02,2.106822e+02,1.877361e+03,1.084496e".split(',')
+#coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
+
+# This performs the coeff readout directly instead of hardcoding the coeff values.
+caldata = os.popen('./ParseCalData cal_data.txt').read()
+#print caldata.split("\t")
+coeff = caldata.split('\t')
 
 
 def rob_to_screen(robx, roby):
