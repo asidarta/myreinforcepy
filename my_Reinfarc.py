@@ -421,6 +421,7 @@ def runBlock():
     while dc['task'] == 'pre_train':
        dc['curtrial'] = each_trial
        print("\nNew Round %i ----------------- "%each_trial)
+       robot.wshm('fvv_trial_no', each_trial)
        to_target()                   # Part 1: Reaching out to target
        return_toStart(triallag)      # Part 2: Moving back to center
        saveLog()                     # Finally, save the logged data
@@ -431,6 +432,7 @@ def runBlock():
     while each_trial < ntrial+1:
         dc['curtrial'] = each_trial
         print("\nNew Round %i ----------------- "%each_trial)
+        robot.wshm('fvv_trial_no', each_trial)
         to_target()                   # Part 1: Reaching out to target
         return_toStart(triallag)      # Part 2: Moving back to center
         saveLog()                     # Finally, save the logged data 

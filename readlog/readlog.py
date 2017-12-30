@@ -13,19 +13,19 @@ import os
 def read_trajectories(traj_f):
 
     fieldsize = 8  # bytes per variable
-    variables = [("sample",          "d"), # yep, unfortunately even integers get stored as doubles
-                 ("pos.x",           "d"),
-                 ("pos.y",           "d"),
-                 ("vel.x",           "d"),
-                 ("vel.y",           "d"),
-                 ("ft.world.x",      "d"),
-                 ("ft.world.y",      "d"),
-                 ("motor.force.x",   "d"),
-                 ("motor.force.y",   "d"),
-                 ("trial.phase",     "d"), # originally called fvv.trial.phase
-                 ("trial",           "d"), # originally called fvv.trial.no
-                 ("ft.world.z",      "d"),
-                 ("grasp.force",     "d"),
+    variables = [("sample",        "d"), # yep, unfortunately even integers get stored as doubles
+                 ("pos.x",         "d"),
+                 ("pos.y",         "d"),
+                 ("vel.x",         "d"),
+                 ("vel.y",         "d"),
+                 ("ft.world.x",    "d"),
+                 ("ft.world.y",    "d"),
+                 ("motor.force.x", "d"),
+                 ("motor.force.y", "d"),
+                 ("trial.phase",   "d"), # originally called fvv.trial.phase
+                 ("trial",         "d") # originally called fvv.trial.no
+                 #("ft.world.z",    "d"),
+                 #("grasp.force",   "d"),
     ]
     n_variables = len(variables)
 

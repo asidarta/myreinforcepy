@@ -89,8 +89,11 @@ read_data_fifo_sample_fn(void)
 #endif				// LATER
 }
 
+
 // write counter, then nlog doubles from log array, into dofifo.
 // this is the normal default logger
+// [ananda] This is pretty much critical where you define data in different columns.
+// Change this accordingly if you want different format!!
 
 void
 write_data_fifo_sample_fn(void)
@@ -103,8 +106,8 @@ write_data_fifo_sample_fn(void)
 
     j = 0;
     ob->log[j++] = (f64) ob->i; //1
-    ob->log[j++] = ob->pos.x; //2
-    ob->log[j++] = ob->pos.y; //3
+    ob->log[j++] = ob->pos.x;   //2
+    ob->log[j++] = ob->pos.y;   //3
 
     ob->log[j++] = ob->vel.x; //4
     ob->log[j++] = ob->vel.y; //5
@@ -121,8 +124,8 @@ write_data_fifo_sample_fn(void)
     //ob->log[j++] = ob->current_controller;
 
     //ob->log[j++] = moh->current_dir;
-    ob->log[j++] = rob->ft.world.z; //12
-    ob->log[j++] = rob->grasp.force; //13
+    //ob->log[j++] = rob->ft.world.z; //12
+    //ob->log[j++] = rob->grasp.force; //13
     
     rt_pipe_write(       &(ob->dofifo), ob->log, (sizeof(ob->log[0]) * ob->nlog), P_NORMAL);
 }

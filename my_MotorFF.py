@@ -11,6 +11,7 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Adding robot data-logging and audio play features (May 4)
            Adding PDmaxv measure, minor edits in target display (Sept 17)
            Adding channel trial feature, force transducers readouts. Rearranging to_target function (Sept 22)
+           Revising logfile trial number; force and velocity readouts; fixing Ycenter position. (Nov-Dec)
 """
 
 
@@ -39,6 +40,8 @@ CURSOR_SIZE = 0.003   #  4 mm cursor point radius
 WAITTIME    = 0.75    # 750 msec general wait or delay time 
 MOVE_SPEED  = 1.2     # duration (in sec) of the robot moving the subject to the center
 FADEWAIT    = 1.0
+YCENTER     = 0.005   # Let's fixed the Y-center position (useful!!), so that all subjects have
+                      # a fixed distance of the robot handle from the body.
 
 
 #dc['post']= 0 # (0: hand moving to start-not ready, 
@@ -76,17 +79,19 @@ def getCenter():
     """To obtain and save a new center position OR load existing center position if exists"""
     print("---Getting center position. PLEASE remain still!")
     # Required to have subject name!
+
     if os.path.isfile(dc['logpath']+subjid.get()+"_center.txt"):
         #txt = open(mypwd + "/data/and_center.txt", "r").readlines()
         center = [[float(v) for v in txt.split(",")] for txt in open(
                       dc['logpath']+subjid.get()+"_center.txt", "r").readlines()]
-        print("Loading existing coordinates: %f, %f"%(center[0][0],center[0][1]))
-        dc['cx'],dc['cy'] = (center[0][0],center[0][1])
+        #print(center)
+        print("Loading existing coordinates: %f, %f"%(center[0][0],YCENTER))
+        dc['cx'],dc['cy'] = (center[0][0],YCENTER)
     else:
         if not os.path.exists(dc['logpath']): 
-             os.makedirs(dc['logpath']) # For a new subject create a folder first!
+             os.makedirs(dc['logpath'])   # For a new subject create a folder first!
         print("This is a new subject. Center position saved.")
-        dc['cx'], dc['cy'] = robot.rshm('x'),robot.rshm('y')
+        dc['cx'], dc['cy'] = robot.rshm('x'), YCENTER
         txt_file = open(dc['logpath']+subjid.get()+"_center.txt", "w")
         txt_file.write("%f,%f"%(dc['cx'],dc['cy']))
         txt_file.close()
@@ -134,7 +139,9 @@ def enterStart(event):
     dc['curtrial']  = 0    # initialize current test trial
     dc['subjd']     = 0    # initialize robot distance from the center of start position
     dc['targetx'],dc['targety'],dc['PDmaxv'] = 0,0,0
+    # [Nov 2017]
     dc['fX'],dc['fY'] = 0,0
+    dc['Vmax'],dc['Vxmax'],dc['Vymax'] = 0,0,0
 
     # Now we will check whether log files already exist to prevent overwritting the file!
     if os.path.exists("%s.txt"%dc['logname']):
@@ -222,6 +229,7 @@ def runPractice():
     # Use a straight-ahead direction for familiarization trials
     angle = 0   
     showTarget(angle)
+    print("--- Press <ESC> to continue after giving your instruction!\n")
 
     print("--- Practice stage-2: move towards target bar")
     keepPrac = True
@@ -287,6 +295,9 @@ def runBlock():
         # Reference: straight-ahead is defined as 90 deg
         angle = angle - 90
 
+        # Update trial number for robot logfile
+        robot.wshm('fvv_trial_no', index)
+ 
         # (1) Wait at center or home position first before giving the go-ahead signal.
         robot.wshm('fvv_trial_phase', 1)  
         # Release robot_stay() to allow movement in principle, but we haven't given 
@@ -315,9 +326,12 @@ def runBlock():
 def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
     """ This handles the whole trial segment when subject moves to hidden target 
     It formally takes 3 inputs: angle, whether you want to show feedback (reward), and 
-    maximum negbias and posbias to receive feedback. By default, feedback is not shown.
+    maximum negbias and posbias to receive feedback. By default, feedback is not shown
+    and NULL FIELD is assumed.
     """
-    dc['subjx']= 0;  dc['subjy']= 0;  vmax = 0
+    
+    dc['subjx']= 0;  dc['subjy']= 0
+    vmax = 0; vxmax = 0; vymax = 0
     win.itemconfig("start",fill="white")
     showTarget(angle)
     showCursorBar(angle, (dc['cx'],dc['cy']), "yellow", TARGETBAR)
@@ -330,17 +344,17 @@ def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
     ffstrength = dc['mydesign']['settings']["ffstrength"] 
     
     if ffield == "null":
-          ffval = 0
+        ffval = 0
     elif ffield == "cwff":
-          ffval = 1*ffstrength
-          robot.start_curl(ffval)
+        ffval = 1*ffstrength
+        robot.start_curl(ffval)
     elif ffield == "ccwff":
-          ffval = -1*ffstrength
-          robot.start_curl(ffval)
+        ffval = -1*ffstrength
+        robot.start_curl(ffval)
     elif ffield == "channel":
-          ffval = 0  # Note: it doesn't mean there is no force though!
-          print dc["targetx"], dc["targety"]
-          robot.plg_channel(dc['targetx'],dc['targety'])
+        ffval = 0  # Note: it doesn't mean there is no force though!
+        print dc["targetx"], dc["targety"]
+        robot.plg_channel(dc['targetx'],dc['targety'])
 
     while not reach_target: # while the subject has not reached the target
         
@@ -356,10 +370,21 @@ def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
         vtot = math.sqrt(vx**2+vy**2)
         #print(robot.rshm('fvv_trial_phase'))
         
+        ################ [Nov 2017] for Neeraj
+        if abs(vxmax) < abs(robot.rshm('fsoft_xvel')):
+            vxmax = robot.rshm('fsoft_xvel')
+            dc['Vxmax'] = robot.rshm('fsoft_xvel')
+            dc['forceY'] = robot.rshm('ft_world_y')
+        if abs(vymax) < abs(robot.rshm('fsoft_yvel')):
+            vymax = robot.rshm('fsoft_yvel')
+            dc['Vymax'] = robot.rshm('fsoft_yvel')
+            dc['forceX'] = robot.rshm('ft_world_x')
+
         # [Jun19] Ananda added this to get x,y positions during the maximum velocity...
         if vmax < vtot: 
             vmax = vtot
-            kinmax(angle) # kinematic max (to get PDmaxv)
+            velmax(angle) # kinematic max (to get PDmaxv)
+            dc['Vmax'] = vmax
 
         # (6) When the hand was towards the center (start), check if the subject is 
         # holding still inside the start position.
@@ -384,6 +409,8 @@ def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
                 print("  Movement duration = %.1f msec"%(myspeed))
 
         elif robot.rshm('fvv_trial_phase')==3:
+            #print "  Maximum X-velocity = %0.3f"%dc['Vxmax']
+            #print "  Maximum Y-velocity = %0.3f"%dc['Vymax']
             # (8) Once reached the target, check end-point accuracy
             checkEndpoint(angle, fdback, rbias)
             master.update()
@@ -399,7 +426,7 @@ def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
             samsung.update()
 
              
-def kinmax(angle):
+def velmax(angle):
     """ This function is to compute PD at max velocity and is always called until
         the velocity reaches the max value!
     """
@@ -431,6 +458,8 @@ def checkEndpoint(angle, feedback, rbias):
     PDy  = trot[0][0]-dc['cx']
     print "  Lateral deviation at endpoint = %f" %PDy
     print "  Lateral deviation at max vel  = %f" %dc['PDmaxv']
+    #print "  Maximum Fx = %.3f"%(dc['forceX'])
+    #print "  Maximum Fy = %.3f"%(dc['forceY'])
 
     # Check the condition to display explosion when required!
     if PDy > rbias[0] and PDy < rbias[1] and feedback:
@@ -444,7 +473,7 @@ def checkEndpoint(angle, feedback, rbias):
 	status = 0
 
     # This is where I save logfile content! Note the delimiter is a comma.
-    dc['logAccuracy'] = "%d,%.3f,%.3f,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n"%(dc['trial'],PDy,dc['PDmaxv'],angle,status,tx,ty,tx-dc['cx'],ty-dc['cy'],dc['fX'],dc['fY'])
+    dc['logAccuracy'] = "%d,%.3f,%.3f,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n"%(dc['trial'],PDy,dc['PDmaxv'],angle,status,tx,ty,tx-dc['cx'],ty-dc['cy'],dc['fX'],dc['fY'],dc['Vmax'],dc['Vxmax'],dc['Vymax'])
     saveLog()
 
 
@@ -460,7 +489,7 @@ def saveLog(header = False):
             log_file.write(dc['logAccuracy'])  # Save every trial as text line
         else:
             print("Creating logfile header.....")
-            log_file.write("%s\n"%("Trial,PDy,PDmaxv,angle,status,tx,ty,tx-cx,ty-cy,forceX,forceY"))
+            log_file.write("%s\n"%("Trial,PDy,PDmaxv,angle,status,tx,ty,tx-cx,ty-cy,forceX,forceY,vmax,vmax_x,vmax_y"))
 
 
 
@@ -493,7 +522,7 @@ caldata = os.popen('./ParseCalData cal_data.txt').read()
 #print caldata.split("\t")
 coeff = caldata.split('\t')
 
-#coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
+coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
 
 
 def rob_to_screen(robx, roby):

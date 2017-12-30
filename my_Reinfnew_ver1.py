@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+fv#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
 Created on Wed Apr 12 20:24:50 2017 @author: ae2010
@@ -375,6 +375,8 @@ def runBlock():
 
     for each_trial in range(1,ntrial+1):
         dc['curtrial'] = each_trial
+        robot.wshm('fvv_trial_no', each_trial)
+
         # For running each trial of a block up to the end of ntrial....
         print("\nNew Round %i ----------------------------------------------"%each_trial)
          

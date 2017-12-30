@@ -452,6 +452,7 @@ def runBlock():
     # ---------------- RUNNING FOR EACH TRIAL IN THE BLOCK ------------------
     for each_trial in range(1,ntrial+1):
         dc['curtrial'] = each_trial
+        robot.wshm('fvv_trial_no', each_trial)
 
         # David St-Amand added this:
         if dc['task'] in ("motor_pre"): 

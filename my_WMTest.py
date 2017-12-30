@@ -10,9 +10,9 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Major cleanup on the code (Apr 21)
            Adding robot data-logging and audio play features (May 4)
            Tweaks on how to handle subject's response. Tidying up. (Nov 25)
+           Tweaks so no need to quit after each block finished. Fixed YCenter position (Dec 5)
 
 """
-
 
 import robot.interface as robot
 import subprocess
@@ -37,8 +37,10 @@ CURSOR_SIZE = 0.009  #  9 mm start radius
 TARGETHOLD  = 0.5    # 500 msec delay at the target point
 WAITTIME    = 1.0    # 1000 msec general wait or delay time 
 MOVE_SPEED  = 0.9    # duration (in sec) of the robot moving the subject to the center
-w, h  = 1920,1080    # Samsung LCD size
+YCENTER     = 0.005  # Let's fixed the Y-center position (useful!!), so that all subjects have
+                     # a fixed distance of the robot handle from the body.
 
+w, h  = 1920,1080    # Samsung LCD size
 txtmsg  = ""
 
 
@@ -84,13 +86,13 @@ def getCenter():
         center = [[float(v) for v in txt.split(",")] for txt in open(
                       dc['logpath']+subjid.get()+"_center.txt", "r").readlines()]
         #print(center)
-        print("Loading existing coordinates: %f, %f"%(center[0][0],center[0][1]))
-        dc['cx'],dc['cy'] = (center[0][0],center[0][1])
+        print("Loading existing coordinates: %f, %f"%(center[0][0],YCENTER))
+        dc['cx'],dc['cy'] = (center[0][0],YCENTER)
     else:
         if not os.path.exists(dc['logpath']):   
-             os.makedirs(dc['logpath'])   # Create a new folder first for new subject!
+             os.makedirs(dc['logpath'])   # For a new subject create a folder first!
         print("This is a new subject. Center position saved.")
-        dc['cx'], dc['cy'] = robot.rshm('x'),robot.rshm('y')
+        dc['cx'], dc['cy'] = robot.rshm('x'), YCENTER
         txt_file = open(dc['logpath']+subjid.get()+"_center.txt", "w")
         txt_file.write("%f,%f"%(dc['cx'],dc['cy']))
         txt_file.close()
@@ -176,6 +178,10 @@ def clickStart(event):
              runBlock(0)	   
         else:
 	     pass
+    chk.config(state='normal')
+    e1.config(state='normal')
+    e2.config(state='normal')
+
 
 
 def read_design_file(mpath):
@@ -251,6 +257,7 @@ def showCircle(x,y,color="white"):
     print("  Presentation completed!")
 
 
+
 # The main code once 'Start' or <Enter> key is pressed
 def runBlock (practice_flag):
     """ The main code once 'Start' or <Enter> key is pressed """
@@ -300,6 +307,7 @@ def runBlock (practice_flag):
         instruct = False # This is to make the audio played only in the first loop
 
     print("\n#### NOTE = Test has ended!!")
+
 
 
 def to_target(directions):
@@ -398,7 +406,7 @@ def mainGUI():
     Label(topFrame, text="Subject ID: ").grid(row=0, sticky=E, pady=(13,20))
     e1 = Entry(topFrame, width = 6, bd =1, textvariable = subjid)
     e1.grid(row=0, column=1, pady=(13,20))
-    e1.insert(END, "aes")
+    #e1.insert(END, "aes")
     Label(topFrame, text="File Number: ").grid(row=0, column=3, padx = (30,5),  pady=(13,20))
     e2 = Entry(topFrame, width = 3, bd =1, textvariable = filenum)
     e2.grid(row=0, column=4, pady=(13,20))
