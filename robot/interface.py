@@ -8,11 +8,13 @@
 # - controller 2  : zero_ft
 # - controller 4  : movetopt (move to location)
 # - controller 5  : static_ctl_fade (hold and fade)
+# - controller 6  : move phase controller (allow free movement until velocity falls below criterion)
 # - controller 8  : trajectory_capture (in null field)
 # - controller 9  : trajectory_reproduce (replay a trajectory loaded into memory)
 # - controller 15 : this handles force channel
 # - controller 16 : static_ctl (hold at specified location)
 # - controller 17 : curl field (according to old Tcl code)
+#
 #
 #
 # The main files here are:
@@ -132,8 +134,8 @@ def load():
     wshm("plg_last_fX",0.0)
     wshm("plg_last_fY",0.0)
 
-    # Remove the safety zone so that the robot arm can move everywhere - careful!
-    wshm("no_safety_check",1)
+    time.sleep(.1) # wait a little so that the velocity values are reliable
+    wshm("no_safety_check",0) # enable the safety zone (i.e. stop disabling it, if you know what I mean)
 
     print("done")
     return
@@ -307,7 +309,7 @@ def start_log(fname,n):
         print("Log already running! Not starting another log process.")
         return
         
-    savedatpid = subprocess.Popen(['cat','/proc/xenomai/registry/pipes/crob_out'],stdout=open(fname,'wb'))
+    savedatpid = subprocess.Popen(['cat','/proc/xenomai/registry/native/pipes/crob_out'],stdout=open(fname,'wb'))
 
     wshm('nlog',n) # starts the log writing
     
@@ -500,7 +502,85 @@ def stay_fade(x,y):
 
 
 
+def move_phase():
+    """
+    A controller that is basically a null field,
+    but that monitors maximum velocity.
+    Then, once you set fvv_trial_phase to 5
+    then once the total velocity falls below some
+    percentage of the maximum velocity on that trial,
+    and then it sets fvv_trial_phase to 6.
+    So basically your script should monitor when fvv_trial_phase becomes
+    6 and then continue by for example clamping the subject in place.
+    """
+    wshm('fvv_max_vel',0.0)     # maximum velocity on this trial
+    wshm('fvv_vel_low_timer',0) # counting how long we have been below the velocity cutoff
+    wshm('fvv_trial_phase',0)   # not yet active
+    
+    controller(6) # move_phase_ctl
+    return
 
+
+
+
+def move_phase_and_capture():
+    """
+    A controller that is basically a null field,
+    but that monitors maximum velocity.
+    Then, once you set fvv_trial_phase to 5
+    then once the total velocity falls below some
+    percentage of the maximum velocity on that trial,
+    and then it sets fvv_trial_phase to 6.
+    So basically your script should monitor when fvv_trial_phase becomes
+    6 and then continue by for example clamping the subject in place.
+    """
+    wshm('fvv_max_vel',0.0)     # maximum velocity on this trial
+    wshm('fvv_vel_low_timer',0) # counting how long we have been below the velocity cutoff
+    wshm('fvv_trial_phase',0)   # not yet active
+
+    wshm('traj_count',0) # define that we are starting capturing from the beginning of the buffer
+    
+    controller(6) # move_phase_ctl
+    return
+
+
+
+
+    
+
+def start_curl(ffval):
+    """ Initiate either CCW or CW curl-field. CCW has a negative ffval,                                                           
+    while CW has a positive ffval. Don't input ffval > 18!
+    [~ananda, May2017]                                                                                                 
+    """
+    if ffval > 18: ffval = 18
+    print("Activating curl controller, curl=%.3f"%ffval)
+    wshm("curl", ffval)
+    # start curl field robot controller declared inside {pl_uslot.c}
+    controller(17)
+
+
+                            
+#### PLG_CHANNEL  - initiate force channel controller towards a target coordinate (px, py)
+def plg_channel (px, py):
+    print ("Executing plg_channel towards (%.3f,%.3f)"%(px,py))
+    # force channel parameters
+    wshm("plg_channel_width", 0.0)
+    wshm("plg_stiffness", 0.0)
+    px0, py0 = rshm('x'),rshm('y')
+    wshm("plg_p1x", px0)
+    wshm("plg_p1y", py0)
+    wshm("plg_p2x", px)
+    wshm("plg_p2y", py)
+    # How much stiffness you need for a channel??
+    wshm("plg_stiffness", -4000.0)
+    wshm("plg_damping", 30.0)
+    # Once variables are set, let's activate the channel controller!
+    controller(15)
+
+
+    
+    
 
 
 
@@ -691,57 +771,7 @@ def tryenc(r):
 
 
 
-def start_capture_and_fade(x,y):  ## UNUSED??
-    """ This starts capturing the trajectory inside the robot and also stays at 
-    the current location, but gradually fades out the forces.
-    So this is a combination of stay_fade() and start_capture().
-    """
-    # Reset the capturing point
-    robot.wshm('traj_count',0) # define that we are starting from the starting point
 
-    # Staying-fading part
-    robot.wshm("fvv_force_fade",1.0) # This starts at 1.0 but exponentially decays to infinitely small
-    robot.wshm("plg_p1x",x)
-    robot.wshm("plg_p1y",y)
-    robot.wshm("plg_stiffness",robot.stiffness)
-    robot.wshm("plg_damping",robot.damping)
-
-    # Use the controller trajectory_capture_stayfade
-    robot.controller(10)        # trajectory_capture_stayfade
-
-
-
-def start_curl(ffval):
-    """ Initiate either CCW or CW curl-field. CCW has a negative ffval, 
-        while CW has a positive ffval. Don't input ffval > 18!  
-        [~ananda, May2017]
-    """
-    if ffval > 18: ffval = 18
-    print("Activating curl controller, curl=%d"%ffval)
-    wshm("curl", ffval)
-    # start curl field robot controller declared inside {pl_uslot.c}
-    controller(17)
-
-
-
-
-
-#### PLG_CHANNEL  - initiate force channel controller towards a target coordinate (px, py)
-def plg_channel (px, py):
-    print ("Executing plg_channel towards (%.3f,%.3f)"%(px,py))
-    # force channel parameters
-    wshm("plg_channel_width", 0.0)
-    wshm("plg_stiffness", 0.0)
-    px0, py0 = rshm('x'),rshm('y')
-    wshm("plg_p1x", px0)
-    wshm("plg_p1y", py0)
-    wshm("plg_p2x", px)
-    wshm("plg_p2y", py)
-    # How much stiffness you need for a channel??
-    wshm("plg_stiffness", -4000.0)
-    wshm("plg_damping", 30.0)
-    # Once variables are set, let's activate the channel controller!
-    controller(15)
 
 
 

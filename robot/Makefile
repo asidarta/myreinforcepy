@@ -31,6 +31,12 @@ OBJS = main.o uei.o fifo.o math.o \
 
 default: all
 
+doc:
+	doxygen doxygen.conf
+
+run: all
+	sudo ./robot
+
 all: robot field_addresses.txt
 
 shm:	shm.c cmds.h $(INCS)
@@ -48,10 +54,10 @@ probe_addresses.c: robdecls.h parse_robdecls.py
 $(OBJS) : $(INCS)
 
 robot: $(OBJS) $(INCS)
-	$(CC) $(LDFLAGS) $(OBJS) -o robot $(MATHLIBS)
+	$(CC) $(OBJS) $(LDFLAGS) -o robot $(MATHLIBS)
 
 clean:
-	rm -rf robot pwrdaq*.o *\~ *\# $(OBJS) probe_addresses.c probe_addresses field_addresses.txt html
+	rm -f robot pwrdaq*.o *\~ *\# $(OBJS) probe_addresses.c probe_addresses field_addresses.txt
 
 tags: $(INCS) $(SRCS)
 	ctags $(INCS) $(SRCS)
@@ -62,6 +68,6 @@ doxygen: html/index.html
 html/index.html: interface.py shm.py
 	doxygen doxygen.conf
 
-LINCS=-I/usr/realtime/include\
+LINCS=-I/usr/xenomai/include\
 	-I/usr/i386-glibc21-linux/include
 

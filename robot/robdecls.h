@@ -384,19 +384,34 @@ typedef struct slot_s {
 
 // safety envelope
 typedef struct safety_s {
-	f64 pos;
-	f64 vel;
-	f64 torque;
-	f64 ramp;
-	f64 damping_nms;
-	f64 velmag_kick;
-	u32 override;
+  f64 pos;
 
-	u32 planar_just_crossed_back;
-	u32 was_planar_damping;
-	u32 damp_ret_ticks;
-	f64 damp_ret_secs;
+  // The positions below specify the minimum and maximum
+  // "safe" values for x and y. Once the robot gets outside
+  // these, the safety features activate.
+  f64 minx;
+  f64 maxx;
+  f64 miny;
+  f64 maxy;
+  
+  f64 vel;
+  f64 torque;
+  f64 ramp;
+  f64 damping_nms;
+  f64 velmag_kick;
+  u32 override;
+
+  xy motor_force; // if the safety motor force has applied, this is what its values are
+  
+  u32 planar_just_crossed_back;
+  u32 was_planar_damping;
+  u32 active; // whether safety damping is currently active
+  u32 has_applied; // This counts the number of frames where the safety boundary was enforced
+  u32 damp_ret_ticks;
+  f64 damp_ret_secs;
 } Safety;
+
+
 
 
 #define N_UEIDAQ_BOARDS 4
@@ -711,6 +726,7 @@ typedef struct ob_s {
   u32 fvv_vel_low_timer;         // times how long we are on low Y-velocity (below some percentage of the maximum velocity
 
   u32 fvv_workspace_enter;       // 0 when outside of workspace, 1 when entered the workspace
+  xy fvv_curl_force;	// world forces sent from the curl field controller (for debug)
 
 
   /* The variables below here are used for trajectory replaying */
@@ -817,26 +833,26 @@ typedef struct func_s {
 
 
 typedef struct Moh_s {
-	f64 pointer; 	
-
-	u32 pixelx[36];
-	u32 pixely[36];
-	f64 realx[36];
-	f64 realy[36];
-	f64 xcenter;
-	f64 ycenter;
-	f64 ffs;
-	f64 hand_place;
-	f64 stiffness;
-	f64 move_flag;
-	f64 servo_flag;
-	f64 counter;
-	f64 current_dir;
-	f64 last_pointX;
-	f64 last_pointY;
-	f64 fX;
-	f64 fY;
-
+  f64 pointer; 	
+  
+  u32 pixelx[36];
+  u32 pixely[36];
+  f64 realx[36];
+  f64 realy[36];
+  f64 xcenter;
+  f64 ycenter;
+  f64 ffs;
+  f64 hand_place;
+  f64 stiffness;
+  f64 move_flag;
+  f64 servo_flag;
+  f64 counter;
+  f64 current_dir;
+  f64 last_pointX;
+  f64 last_pointY;
+  f64 fX;
+  f64 fY;
+  
 } Moh;
 
 

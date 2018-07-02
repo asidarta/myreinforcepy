@@ -13,10 +13,6 @@
 
 PATH=/usr/local/bin:/bin:/usr/bin:/usr/X11R6/bin:/sbin:/usr/sbin
 
-# this can be handy:
-export CROB_HOME=`pwd`
-CROB=$CROB_HOME
-#cd $CROB
 
 # are there user mode procs to kill?
 # these should be killed by the progs that create them
@@ -52,9 +48,9 @@ done
 # pkill (with the default SIGTERM) should work as well as sending quit above.
 
 if pkill -0 -x robot; then
-      pkill -x robot
-      echo "stop: sent pkill to robot process."
-      sleep 2
+    sudo pkill -x robot
+    echo "stop: sent pkill to robot process."
+    sleep 2
 fi
 
 # last resort, try SIGKILL.
@@ -75,27 +71,23 @@ fi
 
 # are there modules to unload?
 
-lsmod | grep -E -q 'xeno_|pwrdaq|pci4e' || {
-	echo "stop: no robot modules to unload."
+lsmod | grep -E -q 'pwrdaq' || {
+	echo "stop: no PowerDAQ modules to unload."
 	# lsmod
 	exit 0
 }
 
 # echo stopping modules...
-# TODO: delete rmmod robot
-# TODO: delete rmmod pwrdaq
-# TODO: delete (cd /usr/src/linux/rtlinux; scripts/rmrtl)
-# TODO: delete rmmod mbuff
 ./unloadmodules.sh
 
 I=0
 while true ; do 
-    lsmod | grep -E -q 'xeno_|pwrdaq|pci4e'
+    lsmod | grep -E -q 'pwrdaq'
     if [ $? ] ; then 
 	break
     fi
     if [ $I -gt 20 ]; then
-	echo "stop: could not unload kernel modules."
+	echo "stop: could not unload PowerDAQ kernel module."
 	exit 1
     fi
     I=`expr $I + 1`

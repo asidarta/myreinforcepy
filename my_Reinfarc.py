@@ -17,7 +17,8 @@ Revisions : Finalizing the working script (Aug 25)
             Added a flag to prevent pressing LEFT/RIGHT twice. Cleaning up clutter on the terminal (Sept 21)
             Minor edits (Oct 2)
             Minor edits on trial-lag option and p_test(nn) function to reduce # WM trials (Nov 15)   
-            Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh) (May 2018).     
+            Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh).
+            System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)     
 """
 
 
@@ -38,11 +39,16 @@ mypwd  = os.getcwd()  # retrieve code current directory
 repeatFlag = True     # keep looping in the current practice segment
 w, h   = 1920,1080    # Samsung LCD size
 
+global traj_display
+traj_display = None
+
 
 # Supposed there are up to 4 lags in WM test, we ought to capture the trajectory up to
 # 4 movements prior. We also have a counter how many trials since the last TEST trial.
 nsince_last_test = 0
 showFlag     = True   # Show yellow hand cursor position throughout (default: YES)
+keep_going   = True   # flag to indicate script is running, until quit button is pressed
+
 dc["active"] = False  # Adding this flag to show that the test is currently active!!
 dc["responded"] = False  # To prevent user from responding twice during WM Test (Flag=1 means responded)
 test_angle = [-45,45] # Which side are we testing? Left/right?
@@ -51,8 +57,8 @@ wm_lag = ["lag-1","lag-2","lag-3","lag-4","no test"]  # The type of lag used in 
 
 # Global definition for test-related parameters. This list replaces exper_design file.
 VER_SOFT = "2.0"
-NTRIAL_MOTOR = 30     # Relevant only for post-test
-NTRIAL_TRAIN = 60     # Training trials with feedback
+NTRIAL_MOTOR = 25     # Relevant only for post-test
+NTRIAL_TRAIN = 50     # Training trials with feedback
 MINTRIAL_SET = 15     # Minimum trials before we set the actual target direction during Motor_Pre
 ROT_MAG = 5           # Value of rotation angle for WM Test.
 INIT_DIR_RANGE = 45   # Range in which participants can get the first explosion during Motor_Pre
@@ -63,12 +69,17 @@ CURSOR_SIZE = 0.003   #  3 mm cursor point radius
 WAITTIME    = 0.75    # 750 msec general wait or delay time 
 MOVE_SPEED  = 1.0     # duration (in sec) of the robot moving the subject to the center
 FADEWAIT    = 0.5     # fading duration for robot-hold/stay
-ARCEXTENT = 90        # How much the arc will span (degree)
+ARCEXTENT   = 90      # How much the arc will span (degree)
 
 # How big a window to use for smoothing (see tools/smoothing for details about the effects)
 SMOOTHING_WINDOW_SIZE = 9 
 SMOOTHING_WINDOW = np.hamming(SMOOTHING_WINDOW_SIZE)
 
+
+#dc['post']= 0 # (0: hand moving to start-not ready, 
+#                 1: hand within/in the start position,
+#                 2: hand on the way to target, 
+#                 3: hand within/in the target)
 
 
 
@@ -76,9 +87,13 @@ def quit():
     """Subroutine to EXIT the program and stop everything."""
     global keep_going
     keep_going = False
-    reach_target = False
-    master.destroy()
-    robot.unload()  # Close/kill robot process
+    print("\nQuit button is pressed. Preparing to bail out all loops!\n")
+
+
+def bailout():
+    samsung.destroy()
+    master.destroy() # Destroy Tk
+    robot.unload()   # Close/kill robot process
     print("\nOkie! Bye-bye...\n")
 
 
@@ -429,7 +444,8 @@ def runBlock():
        to_target()                   # Part 1: Reaching out to target
        return_toStart(triallag)      # Part 2: Moving back to center
        saveLog()                     # Finally, save the logged data
-       each_trial = each_trial + 1     
+       each_trial = each_trial + 1
+       if not keep_going: break     # After QUIT is pressed, break the loop     
 
     # ---------------- RUNNING FOR EACH TRIAL IN THE BLOCK ------------------
     each_trial = 1
@@ -440,17 +456,21 @@ def runBlock():
         to_target()                   # Part 1: Reaching out to target
         return_toStart(triallag)      # Part 2: Moving back to center
         saveLog()                     # Finally, save the logged data 
-        each_trial = each_trial + 1 
+        each_trial = each_trial + 1
+        if not keep_going: break     # After QUIT is pressed, break the loop 
 
     # ----------------------------------------------------------------------
     print("\n\n#### Test has ended! You may continue with the NEXT block or QUIT now.....\n")
     
     robot.stop_log()   # Stop recording robot data now!
-    showTarget(dc['angle'])     # In between blocks, show target arc!
+    showTarget(dc['angle'])  # In between blocks, show target arc!
 
     #robot.stay_fade(dc['cx'],dc['cy'])  # Commented this, we still want to activate robot_stay!
     master.update()
-    dc["active"] = False    # allow us running a new block
+    dc["active"] = False     # allow us running a new block
+
+    if not keep_going: bailout()  # run bailout function [Updated:Jul 1]
+
 
 
 
@@ -474,7 +494,7 @@ def to_target():
     robot.stay_fade(dc['cx'],dc['cy'])
     time.sleep(FADEWAIT)
 
-    while not reach_target: # while the subject has not reached the target
+    while keep_going and not reach_target: # while the subject has not reached the target; ADDED keep_going flag here!
         
         # (2) First get current x,y robot position and update yellow cursor location
         x,y = robot.rshm('x'),robot.rshm('y')
@@ -921,6 +941,10 @@ master.geometry('%dx%d+%d+%d' % (550, 540, 500, 200)) # Nice GUI setting: w,h,x,
 master.title("Reward-based Sensorimotor Learning")
 master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
 
+### Ensuring subjectś window on the Samsung LCD!
+samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1600, 0)) 
+
+
 subjid  = StringVar()
 filenum = StringVar()
 mymsg   = StringVar()
@@ -1260,23 +1284,14 @@ os.system("clear")  # Clear the terminal
 robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")
 
-global calib
-load_calib() # Load calibration file for rob_screen transformation
-
 robot.zeroft()
-
 print("\n\nPress START or <Enter> key to continue\n")
-
-global traj_display
-traj_display = None
 
 global calib
 load_calib() # Load calibration file for rob_screen transformation
 
 mainGUI()
 robot_canvas()
-
-keep_going   = True
 
 while keep_going:
     # Although it maintains a main loop, this routine blocks! Use update() instead...
@@ -1285,3 +1300,10 @@ while keep_going:
     master.update_idletasks()
     master.update()
     #time.sleep(0.04) # 40 msec frame-rate of GUI update
+
+# Run this bailout function after QUIT is pressed!! Place it at the very end of the code. 
+# [Updated:Jul 1]
+if not keep_going: bailout()
+
+
+

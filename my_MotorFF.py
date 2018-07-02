@@ -12,7 +12,8 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Adding PDmaxv measure, minor edits in target display (Sept 17)
            Adding channel trial feature, force transducers readouts. Rearranging to_target function (Sept 22)
            Revising logfile trial number; force and velocity readouts; fixing Ycenter position. (Nov-Dec)
-           Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh) (May 2018).     
+           Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh).
+           System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)     
 """
 
 
@@ -32,13 +33,14 @@ keepPrac = True       # keep looping in the current practice segment
 instruct = True       # play instruction audio
 w, h   = 1920,1080    # Samsung LCD size
 dc["active"] = False  # Adding this flag to show that the test is currently active!
+keep_going   = True   # flag to indicate script is running, until quit button is pressed
 
 # Global definition of constants
 TARGETBAR   = True    # Showing target bar AND cursor bar? Set=False to just show the circles!!
 TARGETDIST  = 0.15    # move 15 cm from the center position (default!)
 TARGETTHICK = 0.004   # 8 mm target thickness....................
-START_SIZE  = 0.009   #  9 mm start point radius
-CURSOR_SIZE = 0.003   #  4 mm cursor point radius
+START_SIZE  = 0.009   # 9 mm start point radius
+CURSOR_SIZE = 0.003   # 4 mm cursor point radius
 WAITTIME    = 0.75    # 750 msec general wait or delay time 
 MOVE_SPEED  = 1.2     # duration (in sec) of the robot moving the subject to the center
 FADEWAIT    = 1.0
@@ -56,9 +58,13 @@ def quit():
     """Subroutine to EXIT the program and stop everything."""
     global keep_going
     keep_going = False
-    reach_target = False
-    master.destroy()
-    robot.unload()  # Close/kill robot process
+    print("\nQuit button is pressed. Preparing to bail out all loops!\n")
+
+
+def bailout():
+    samsung.destroy()
+    master.destroy() # Destroy Tk
+    robot.unload()   # Close/kill robot process
     print("\nOkie! Bye-bye...\n")
 
 
@@ -192,6 +198,7 @@ def enterStart(event):
 
 
 
+
 def read_design_file(mpath):
     """ Based on subj_id & block number, read experiment design file!"""
     print mpath
@@ -218,7 +225,7 @@ def runPractice():
     #playInstruct(1)
     robot.stay_fade(dc['cx'],dc['cy'])
     time.sleep(FADEWAIT)
-    while keepPrac:
+    while keep_going and keepPrac:
         # Note: To *fade out* the forces instead of releasing all of a sudden
         # First read out current x,y robot position
         x,y = robot.rshm('x'),robot.rshm('y')
@@ -226,6 +233,7 @@ def runPractice():
         dc['subjd'] = math.sqrt((x-dc['cx'])**2 + (y-dc['cy'])**2)
         showCursorBar(0, (x,y), "yellow", TARGETBAR)
         time.sleep(0.01)
+	if not keep_going: break  # then break the loop
 
     goToCenter(MOVE_SPEED) # Bring the arm back to the center first
 
@@ -237,7 +245,7 @@ def runPractice():
     print("--- Practice stage-2: move towards target bar")
     keepPrac = True
     #playInstruct(2)
-    while keepPrac:
+    while keep_going and keepPrac:
         # Note: To *fade out* the forces instead of releasing all of a sudden
         robot.stay_fade(dc['cx'],dc['cy'])
         time.sleep(FADEWAIT)
@@ -245,11 +253,12 @@ def runPractice():
         to_target(angle)    
         # Go back to center and continue to the next trial.
         goToCenter(MOVE_SPEED)
+	if not keep_going: break  # then break the loop
 
     print("--- Practice stage-3: exploring the space")
     #playInstruct(3)
     keepPrac = True
-    while keepPrac:
+    while keep_going and keepPrac:
         # Note: To *fade out* the forces instead of releasing all of a sudden
         robot.stay_fade(dc['cx'],dc['cy'])
         time.sleep(FADEWAIT)
@@ -257,11 +266,12 @@ def runPractice():
         to_target(angle)    
         # Go back to center and continue to the next trial.
         goToCenter(MOVE_SPEED)
+	if not keep_going: break  # then break the loop
 
     print("--- Practice stage-4: speed control")
     keepPrac = True
     #playInstruct(4)
-    while keepPrac:
+    while keep_going and keepPrac:
         # Note: To *fade out* the forces instead of releasing all of a sudden
         robot.stay_fade(dc['cx'],dc['cy'])
         time.sleep(FADEWAIT)
@@ -269,10 +279,12 @@ def runPractice():
         to_target(angle)    
         # Go back to center and continue to the next trial.
         goToCenter(MOVE_SPEED)
+	if not keep_going: break  # then break the loop
     
     playInstruct(5)
-    print("\n#### Session has ended! Press QUIT button now.....")
+    if keep_going: print("\n#### Session has ended! Press QUIT button now.....")
     dc["active"] = False # mark that we are no longer running
+
 
 
     
@@ -315,7 +327,10 @@ def runBlock():
         # (3) Return to the center position. Ready for the next trial.
         goToCenter(MOVE_SPEED)
 
-    print("\n#### Test has ended! You may continue with the NEXT block or QUIT now.....")
+        # (4) Check whether we need to bailout! [Updated:Jul 1]
+        if not keep_going: break  # then break the loop
+
+    if keep_going: print("\n#### Test has ended! You may continue with the NEXT block or QUIT now.....")
     dc["active"] = False   # allow running a new block
 
     robot.stop_log()  # Stop data logging now!
@@ -324,6 +339,8 @@ def runBlock():
     e2.config(state='normal')  
     e4.config(state='normal')
     master.update()
+    
+
 
 
 def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
@@ -359,7 +376,7 @@ def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
         print dc["targetx"], dc["targety"]
         robot.plg_channel(dc['targetx'],dc['targety'])
 
-    while not reach_target: # while the subject has not reached the target
+    while keep_going and not reach_target: # while the subject has not reached the target; ADDED keep_going flag here!
         
         # (5) First get current x,y robot position and update yellow cursor location
         x,y = robot.rshm('x'),robot.rshm('y')
@@ -510,6 +527,10 @@ samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
 master.geometry('%dx%d+%d+%d' % (400, 200, 500, 200)) # Nice GUI setting: w,h,x,y   
 master.title("Sensorimotor Learning User Interface")
 master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
+
+### Ensuring subjectś window on the Samsung LCD!
+samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1600, 0)) 
+
 
 subjid  = StringVar()
 filenum = StringVar()
@@ -787,6 +808,12 @@ master.bind('<Escape>', quitPractice)
 
 os.system("clear")
 
+global traj_display
+traj_display = None
+
+
+######### This is the entry point when you launch the code ################
+
 robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")
 
@@ -799,17 +826,17 @@ load_calib() # Load calibration file for rob_screen transformation
 mainGUI()
 robot_canvas()
 
-keep_going   = True
-reach_target = True
-
 while keep_going:
     # Although it maintains a main loop, this routine blocks! Use update() instead...
     #master.mainloop()
     robot.rshm("curl")
     master.update_idletasks()
     master.update()
-    time.sleep(0.04) # 40 msec frame-rate of GUI update
+    #time.sleep(0.04) # 40 msec frame-rate of GUI update
 
+# Run this bailout function after QUIT is pressed!! Place it at the very end of the code. 
+# [Updated:Jul 1]
+if not keep_going: bailout()
 
 
 

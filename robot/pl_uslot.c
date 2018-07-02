@@ -55,13 +55,11 @@ void zero_ft_nodyncomp(u32);
 void movetopt(u32);
 void static_ctl(u32);
 void static_ctl_fade(u32);
-void trajectory_capture(u32);
-void trajectory_reproduce(u32);
-void trajectory_capture_stayfade(u32);
-
 void curl_ctl(u32);
 void force_channel(u32);
 
+void trajectory_capture(u32);
+void trajectory_reproduce(u32);
 
 
 
@@ -79,14 +77,14 @@ init_slot_fns(void)
   ob->slot_fns[7] =  null_ctl;
   ob->slot_fns[8] =  trajectory_capture;
   ob->slot_fns[9] =  trajectory_reproduce;
-  ob->slot_fns[10] = trajectory_capture_stayfade;
+  ob->slot_fns[10] = null_ctl;
   ob->slot_fns[11] = null_ctl;
   ob->slot_fns[12] = null_ctl;
   ob->slot_fns[13] = null_ctl;
   ob->slot_fns[14] = movetopt;
-  ob->slot_fns[15] = force_channel;   // this is to handle force-channel function! [Ananda, 20sep]
-  ob->slot_fns[16] = static_ctl;      // stay at p1x p1y under active control
-  ob->slot_fns[17] = curl_ctl;        // velocity-dependent force field [Ananda added this]
+  ob->slot_fns[15] = force_channel;   // this is to handle force-channel function! [Ananda, 20sep]  
+  ob->slot_fns[16] = static_ctl;   // stay at p1x p1y under active control
+  ob->slot_fns[17] = curl_ctl; 
 }
 
 #define X ob->pos.x
@@ -106,30 +104,29 @@ init_slot_fns(void)
 #define sY rob->ft.world.y
 #define sZ rob->ft.world.z
 
-#define fvv_vmax_x          ob->fvv_vmax_x
-#define fvv_vmax_y          ob->fvv_vmax_y
+#define fvv_vmax_x         ob->fvv_vmax_x
+#define fvv_vmax_y         ob->fvv_vmax_y
 
 #define fvv_final_x         ob->fvv_final_x
 #define fvv_final_y         ob->fvv_final_y
 
-#define fvv_trial_phase     ob->fvv_trial_phase
-#define fvv_robot_center_x  ob->fvv_robot_center_x
-#define fvv_robot_center_y  ob->fvv_robot_center_y
-#define fvv_vel             ob->fvv_vel
-#define fvv_max_vel         ob->fvv_max_vel
-#define fvv_trial_timer     ob->fvv_trial_timer
-#define fvv_vel_low_timer   ob->fvv_vel_low_timer
+#define fvv_trial_phase    ob->fvv_trial_phase
+#define fvv_robot_center_x ob->fvv_robot_center_x
+#define fvv_robot_center_y ob->fvv_robot_center_y
 //#define fvv_robot_min_y    ob->fvv_robot_min_y
+#define fvv_vel            ob->fvv_vel
+#define fvv_max_vel        ob->fvv_max_vel
+#define fvv_trial_timer    ob->fvv_trial_timer
+#define fvv_vel_low_timer  ob->fvv_vel_low_timer
 
-#define traj_count          ob->traj_count
-#define traj_n_samps        ob->traj_n_samps
-#define traj_final_x        ob->traj_final_x
-#define traj_final_y        ob->traj_final_y
-#define trajx               ob->trajx
-#define trajy               ob->trajy
-#define replay_damping      ob->replay_damping
-#define replay_stiffness    ob->replay_stiffness
-
+#define traj_count         ob->traj_count
+#define traj_n_samps       ob->traj_n_samps
+#define traj_final_x       ob->traj_final_x
+#define traj_final_y       ob->traj_final_y
+#define trajx              ob->trajx
+#define trajy              ob->trajy
+#define replay_damping     ob->replay_damping
+#define replay_stiffness   ob->replay_stiffness
 
 
 
@@ -142,7 +139,7 @@ const double distance_cutoff=.05; // in meters; the distance from the center tha
 // trial, which means we initiate the clamp to stop the participant where they are.
 // proportion of the maximum velocity
 const double vel_prop=.05;       // proportion of maximum velocity
-const int vel_low_duration = 20; // in # of frames
+const int vel_low_duration = 15; // in # of frames
 
 double max_vel_prop; // used to cache the calculation of vel_prop*fvv_max_vel
 
@@ -221,6 +218,7 @@ planar_const_ctl(u32 id)
 void
 null_ctl(u32 id)
 {
+  // Null controller with no dynamics compensation
   fX = 0.0;
   fY = 0.0;
   //#ifdef dyn_comp 
@@ -261,32 +259,12 @@ null_ctl_dyncomp(u32 id)
 void
 move_phase_ctl(u32 id)
 {
-  /* Determine whether the subject is in the workspace or not */
+  /* 
+     This is a controller that is basically a null field,
+     except for when the velocity falls below a certain 
+     amount and then it sets fvv_trial_phase to 6.
+  */
 
-  // Calculate the distance from the center
-  double dist = sqrt(pow(X-fvv_robot_center_x,2)+pow(Y-fvv_robot_center_y,2));
-
-  if (fvv_trial_phase==4) {
-    // PHASE = wait.move
-    // First, check if the subject has left the center (and is on the move)
-
-    // Check whether the participant has entered the workspace,
-    // as defined by the vertical coordinate.
-    ob->fvv_workspace_enter = (dist>distance_cutoff);
-
-    // If we are in the workspace...
-    if (ob->fvv_workspace_enter) {
-
-      // Declare move phase 5 (moving within the workspace)
-      fvv_trial_phase = 5;
-      fvv_trial_timer = 0; // start the timer: timer=0 is when workspace is entered
-      fvv_max_vel     = 0.0; // set the maximum recorded velocity to zero
-      fvv_vmax_x      = 0.0;
-      fvv_vmax_y      = 0.0;
-
-    }
-
-  };
 
   if (fvv_trial_phase==5) {
     // PHASE = moving
@@ -315,7 +293,7 @@ move_phase_ctl(u32 id)
     if (fvv_vel_low_timer>vel_low_duration) {
       // If we have been below the threshold-low speed long enough,
       // declare it the end of the trial.
-      fvv_trial_phase = 6;
+      fvv_trial_phase = 6; // this marks that the trial has come to an end!
       fvv_final_x = X;
       fvv_final_y = Y;
     }
@@ -328,6 +306,20 @@ move_phase_ctl(u32 id)
   fX = 0.0;
   fY = 0.0;
 
+  
+  // Infrastructure for capturing (if we are doing that -- but why not?)
+  if (fvv_trial_phase>4) {
+    int traj_cnt = traj_count;// cast to unsigned just to be sure
+    if (traj_count<=TRAJECTORY_BUFFER_SIZE) {
+      
+      // Capture the current position
+      trajx[traj_cnt] = X;
+      trajy[traj_cnt] = Y;
+      
+      ++traj_count;
+    }
+  }
+  
   // And dynamics compensation please
 #ifdef dyn_comp 
   dynamics_compensation(fX,fY,3,1.0);
@@ -464,8 +456,8 @@ static_ctl_fade(u32 id)
      using the multiplier fvv_force_fade that goes to
      zero. */
   
-  ob->fvv_force_fade *= 0.99;       // Note: should we use 0.99 or 0.991??
-  f64 fade  = ob->fvv_force_fade;   // between 1 (full force) and 0 (no force)
+  ob->fvv_force_fade *= 0.99; 
+  f64 fade  = ob->fvv_force_fade; // between 1 (full force) and 0 (no force)
   //fade = fade*0.9;                // Exponentially decay force
 
   f64 pcurx = ob->plg_p1x;
@@ -478,7 +470,7 @@ static_ctl_fade(u32 id)
   ob->fvv_workspace_enter = (dist>distance_cutoff);
 
 
-  fX= fade* ((-stiff*(X-pcurx) - damp*(vX)));  // larger fade value indicates slower fading!
+  fX= fade* ((-stiff*(X-pcurx) - damp*(vX)));
   fY= fade* ((-stiff*(Y-pcury) - damp*(vY)));
 #ifdef dyn_comp 
   dynamics_compensation(fX,fY,3,1.0);
@@ -492,35 +484,115 @@ static_ctl_fade(u32 id)
 
 
 
+// curl controller
+// with x=vy y=-vx, and +curl if it rotates cw. and -curl rotates ccw.
+
+void
+curl_ctl(u32 id)
+{
+
+  f64 curl;
+  f64 damp;
+  
+  curl = ob->curl;
+  damp = ob->damp;
+  
+  fX =  ( curl * (vY) );
+  fY = -( curl * (vX) );
+
+  #ifdef dyn_comp 
+  dynamics_compensation(fX,fY,3,1.0);
+# else
+  ob->motor_force.x = fX;
+  ob->motor_force.y = fY;
+#endif
+
+  ob->fvv_curl_force.x = ob->motor_force.x;
+  ob->fvv_curl_force.y = ob->motor_force.y;
+  
+}
+
+
+
+
+// Adding force channel; added by Ananda (Sept 20) following old Gribble's utils.tcl
+
+void force_channel(u32 id)
+{
+  f64 x1 = ob->plg_p1x;
+  f64 y1 = ob->plg_p1y;
+  f64 x2 = ob->plg_p2x;
+  f64 y2 = ob->plg_p2y;
+  f64 stiff = ob->plg_stiffness;
+  f64 w = ob->plg_channel_width;
+  // code from Jeremy Wong for force channel forces
+  // step 1: slope & intercept of channel
+  
+  if (x1 == x2) {
+    
+    // then we only want x forces
+    double f_norm = 0.0;
+    f_norm = (fabs(X-x1)>w) * (X-x1-w) * stiff;
+    fX = f_norm;
+    fY = 0.0;
+    
+  } else if (y1 == y2) {
+    
+    double f_norm = 0.0;
+    // then we only want y forces
+    f_norm = (fabs(Y-y1)>w) * (Y-y1-w) * stiff;
+    fX = 0.0;
+    fY = f_norm;
+    
+  } else {
+    
+    f64 m_c = (y2-y1) / (x2-x1);
+    f64 b_c = y2 - (m_c * x2);
+    // step 2: slope & intercept of perpendicular line to channel
+    f64 m_perp = -1 / m_c;
+    f64 b_perp = Y - (m_perp * X);
+    // step 3:
+    f64 x_i = (b_perp - b_c) / (m_c - m_perp);
+    f64 y_i = (x_i * m_perp) + b_perp;
+    f64 l_perp = sqrt(((X-x_i) * (X-x_i)) + ((Y-y_i) * (Y-y_i)));
+    f64 f_norm = ((l_perp-w)>0) * (l_perp - w)*stiff;
+    f64 phi = atan2((Y - y_i),(X - x_i)); // need atan2 for direction.
+    fX = f_norm * cos(phi);
+    fY = f_norm * sin(phi);
+  }
+  #ifdef dyn_comp 
+    	dynamics_compensation(fX,fY,3,1.0);
+	# else
+    	ob->motor_force.x = fX;
+    	ob->motor_force.y = fY;
+	#endif
+  //dynamics_compensation(fX,fY,3,1.0);
+}
+
+
+
+
+
+
+
+
 
 void 
 trajectory_capture(u32 id)
-{ /*
+{
+  /*
     This controller captures the positions of the robot while
     letting the subject move freely.
-    At the same time, we also obtain the radial velocity. This is in
-    case the movement isn't in a straight line [update ~ananda,jun22]
   */
   int traj_cnt = traj_count;// cast to unsigned just to be sure
-
-  double dX, dY, dnorm; 
-
   if (traj_count<=TRAJECTORY_BUFFER_SIZE) {
 
     // Capture the current position
     trajx[traj_cnt] = X;
     trajy[traj_cnt] = Y;
+      
     ++traj_count;
   }
-
-  dX  = X - fvv_robot_center_x;
-  dY  = Y - fvv_robot_center_y;
-  dnorm = sqrt(pow(dX,2) + pow(dY,2));   // normalized vector
-
-  // Compute radial velocity w.r.t center position is the summation of
-  // dot product of speed and its unit vector.
-  fvv_vel = vX*dX/dnorm + vY*dY/dnorm;
-
   fX = 0.0;
   fY = 0.0;
   
@@ -588,145 +660,4 @@ trajectory_reproduce(u32 id)
   ob->motor_force.y = fY;
 #endif
 }
-
-
-
-
-
-void 
-trajectory_capture_stayfade(u32 id)
-{
-  /* 
-     This is the same as the static_ctl controller,
-     which keeps us at the given coordinates,
-     except that this fades the force gently,
-     using the multiplier fvv_force_fade that goes to
-     zero. 
-
-     At the same time, this captures the positions
-     so that we can later play them back.
-  */
-
-  // The capturing part
-  int traj_cnt = traj_count;// cast to unsigned just to be sure
-  if (traj_count<=TRAJECTORY_BUFFER_SIZE) {
-
-    // Capture the current position
-    trajx[traj_cnt] = X;
-    trajy[traj_cnt] = Y;
-      
-    ++traj_count;
-  }
- 
-
-
-  // The staying-fading part
-  ob->fvv_force_fade *= 0.99; 
-  f64 fade  = ob->fvv_force_fade; // between 1 (full force) and 0 (no force)
-  //fade = fade*0.9;                // Exponentially decay force
-
-  f64 pcurx = ob->plg_p1x;
-  f64 pcury = ob->plg_p1y;
-  f64 stiff = ob->plg_stiffness;
-  f64 damp  = ob->plg_damping;
-
-  fX= fade* ((-stiff*(X-pcurx) - damp*(vX)));
-  fY= fade* ((-stiff*(Y-pcury) - damp*(vY)));
-#ifdef dyn_comp 
-  dynamics_compensation(fX,fY,3,1.0);
-# else
-  ob->motor_force.x = fX;
-  ob->motor_force.y = fY;
-#endif
-}
-
-
-
-
-// curl controller
-// with x=vy y=-vx, and +curl if it rotates cw. and -curl rotates ccw.
-
-void
-curl_ctl(u32 id)
-{
-
-    f64 curl;
-    f64 damp;
-
-    curl = ob->curl;
-    damp = ob->damp;
-
-    fX =  ( curl * (vY) );
-    fY = -( curl * (vX) );
-    
-    #ifdef dyn_comp 
-    	dynamics_compensation(fX,fY,3,1.0);
-	# else
-    	ob->motor_force.x = fX;
-    	ob->motor_force.y = fY;
-	#endif
-}
-
-
-
-
-
-// Adding force channel; added by Ananda (Sept 20) following old Gribble's utils.tcl
-
-void force_channel(u32 id)
-{
-  f64 x1 = ob->plg_p1x;
-  f64 y1 = ob->plg_p1y;
-  f64 x2 = ob->plg_p2x;
-  f64 y2 = ob->plg_p2y;
-  f64 stiff = ob->plg_stiffness;
-  f64 w = ob->plg_channel_width;
-  // code from Jeremy Wong for force channel forces
-  // step 1: slope & intercept of channel
-  
-  if (x1 == x2) {
-    
-    // then we only want x forces
-    double f_norm = 0.0;
-    f_norm = (fabs(X-x1)>w) * (X-x1-w) * stiff;
-    fX = f_norm;
-    fY = 0.0;
-    
-  } else if (y1 == y2) {
-    
-    double f_norm = 0.0;
-    // then we only want y forces
-    f_norm = (fabs(Y-y1)>w) * (Y-y1-w) * stiff;
-    fX = 0.0;
-    fY = f_norm;
-    
-  } else {
-    
-    f64 m_c = (y2-y1) / (x2-x1);
-    f64 b_c = y2 - (m_c * x2);
-    // step 2: slope & intercept of perpendicular line to channel
-    f64 m_perp = -1 / m_c;
-    f64 b_perp = Y - (m_perp * X);
-    // step 3:
-    f64 x_i = (b_perp - b_c) / (m_c - m_perp);
-    f64 y_i = (x_i * m_perp) + b_perp;
-    f64 l_perp = sqrt(((X-x_i) * (X-x_i)) + ((Y-y_i) * (Y-y_i)));
-    f64 f_norm = ((l_perp-w)>0) * (l_perp - w)*stiff;
-    f64 phi = atan2((Y - y_i),(X - x_i)); // need atan2 for direction.
-    fX = f_norm * cos(phi);
-    fY = f_norm * sin(phi);
-  }
-  #ifdef dyn_comp 
-    	dynamics_compensation(fX,fY,3,1.0);
-	# else
-    	ob->motor_force.x = fX;
-    	ob->motor_force.y = fY;
-	#endif
-  //dynamics_compensation(fX,fY,3,1.0);
-}
-
-
-
-
-
 

@@ -11,6 +11,8 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Adding robot data-logging and audio play features (May 4)
            Tweaks on how to handle subject's response. Tidying up. (Nov 25)
            Tweaks so no need to quit after each block finished. Fixed YCenter position (Dec 5)
+           Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh).
+           System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)     
 
 """
 
@@ -28,6 +30,7 @@ from Tkinter import *	# Importing the Tkinter library
 dc = {}              # dictionary for important param
 mypwd = os.getcwd()  # retrieve code current directory
 instruct = True      # play the instruction audio?
+keep_going = True    # flag to indicate script is running, until quit button is pressed
 
 # Global definition of constants
 ANSWERFLAG  = 1      # Flag = 1 means subject has responded, make this a default value!
@@ -51,13 +54,14 @@ def quit():
     """Subroutine to EXIT the program and stop everything."""
     global keep_going
     keep_going = False
-    reach_target = False
-    #robot.stop_log()
-    robot.unload()  # Close/kill robot process
-    #if int(filenum.get()) != 0:
-    #    mycmd = "ta.tcl %s.dat > %s.asc 11"%(dc['logname'],dc['logname'])
-    #    os.system(mycmd)    
-    master.destroy()
+    dc['answer'] = 9
+    print("\nQuit button is pressed. Preparing to bail out all loops!\n")
+
+
+def bailout():
+    samsung.destroy()
+    master.destroy() # Destroy Tk
+    robot.unload()   # Close/kill robot process
     print("\nOkie! Bye-bye...\n")
 
 
@@ -205,7 +209,7 @@ def doAnswer(index):
     global ANSWERFLAG
     ANSWERFLAG = 0  # Make this false so that we can record subject's response!
     print("Waiting for subject's response")
-    while (not ANSWERFLAG):
+    while not ANSWERFLAG and keep_going:  #<<<
         master.update_idletasks()
         master.update()
         time.sleep(0.3)
@@ -289,17 +293,17 @@ def runBlock (practice_flag):
 	to_target(anchors)    # <<<<<<
 
         print ("  Waiting for %d msec"%(delay))
-        if practice_flag: 
+        if keep_going and practice_flag: 
             print "\nFamiliarization Step-2"
             playInstruct(2) 
         time.sleep(delay/1000)
 
-	to_target(probe)      # <<<<<<
+	if keep_going: to_target(probe)      # <<<<<<
 
         RT = doAnswer(index)
         dc['log']=dc['log']+" ANSWER:%d  RT:%d  DELAY:%d\n"%(dc['answer'],RT,delay)
 
-        if practice_flag: 
+        if keep_going and practice_flag: 
             print "\nFamiliarization Step-3"
             playInstruct(3)
  
@@ -308,6 +312,9 @@ def runBlock (practice_flag):
 
         global instruct
         instruct = False # This is to make the audio played only in the first loop
+
+        # Check whether we need to bailout! [Updated:Jul 1]
+        if not keep_going: break  # then break the loop
 
     print("\n#### NOTE = Test has ended!!")
 
@@ -333,6 +340,8 @@ def to_target(directions):
             dc['log'] = dc['log'] + " " + str(direction)
     	    # Occasionally call update(). This allows us to press buttons while looping.
             master.update()
+            # Check whether we need to bailout! [Updated:Jul 1]
+            if not keep_going: break  # then break the loop
 
     else:
         playAudio("beep.wav")
@@ -373,6 +382,9 @@ w, h = 1920,1080
 master.title("-- Somatic WM Test --")
 master.geometry('%dx%d+%d+%d' % (370, 170, 500, 200))   # Nice GUI geometry: w,h,x,y 
 master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
+
+### Ensuring subjectś window on the Samsung LCD!
+samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1600, 0)) 
 
 subjid  = StringVar()
 filenum = StringVar()
@@ -546,10 +558,13 @@ master.bind('<Right>' , enterNo)
 
 os.system("clear")
 
+######### This is the entry point when you launch the code ################
+
 robot.load() # Load the robot process
-print("\nRobot successfully loaded...")
+print("\nRobot successfully loaded...\n")
 
 robot.zeroft()
+print("\n\nPress START or <Enter> key to continue\n")
 
 global calib
 load_calib() # Load calibration file for rob_screen transformation
@@ -557,16 +572,16 @@ load_calib() # Load calibration file for rob_screen transformation
 mainGUI()
 robot_canvas()
 
-keep_going = True
-
 while keep_going:
     # Although it maintains a main loop, this routine blocks! Use update() instead...
     #master.mainloop()
-    #routine_checks()
-    #master.update_idletasks()
+    robot.rshm("curl")
+    master.update_idletasks()
     master.update()
-    time.sleep(0.1) # frame rate of our GUI update
+    #time.sleep(0.04) # 40 msec frame-rate of GUI update
 
-
+# Run this bailout function after QUIT is pressed!! Place it at the very end of the code. 
+# [Updated:Jul 1]
+if not keep_going: bailout()
 
 
