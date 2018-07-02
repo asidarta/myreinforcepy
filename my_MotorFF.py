@@ -12,6 +12,7 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Adding PDmaxv measure, minor edits in target display (Sept 17)
            Adding channel trial feature, force transducers readouts. Rearranging to_target function (Sept 22)
            Revising logfile trial number; force and velocity readouts; fixing Ycenter position. (Nov-Dec)
+           Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh) (May 2018).     
 """
 
 
@@ -21,26 +22,27 @@ import time
 import json
 import math
 import subprocess
+import pickle
 
 
 # Global definition of variables
 dc = {}               # dictionary for important param
 mypwd  = os.getcwd()  # retrieve code current directory
 keepPrac = True       # keep looping in the current practice segment
-instruct = True       # play instruction audio file?trial
+instruct = True       # play instruction audio
 w, h   = 1920,1080    # Samsung LCD size
-dc["active"] = False  # Adding this flag to show that the test is currently active!!
+dc["active"] = False  # Adding this flag to show that the test is currently active!
 
 # Global definition of constants
-TARGETBAR   = False   # Showing target bar AND cursor bar?? Set=False to just show the circles!!
+TARGETBAR   = True    # Showing target bar AND cursor bar? Set=False to just show the circles!!
 TARGETDIST  = 0.15    # move 15 cm from the center position (default!)
-TARGETTHICK = 0.01    # 20 mm target thickness
+TARGETTHICK = 0.004   # 8 mm target thickness....................
 START_SIZE  = 0.009   #  9 mm start point radius
 CURSOR_SIZE = 0.003   #  4 mm cursor point radius
 WAITTIME    = 0.75    # 750 msec general wait or delay time 
 MOVE_SPEED  = 1.2     # duration (in sec) of the robot moving the subject to the center
 FADEWAIT    = 1.0
-YCENTER     = 0.005   # Let's fixed the Y-center position (useful!!), so that all subjects have
+YCENTER     = 0.000   # Let's fixed the Y-center position (useful!!), so that all subjects have
                       # a fixed distance of the robot handle from the body.
 
 
@@ -210,6 +212,7 @@ def runPractice():
     global keepPrac
     x,y = robot.rshm('x'),robot.rshm('y')
     showCursorBar(0, (x,y), "yellow", TARGETBAR)
+    dc['trial'] = -1   # trial numbers are irrelevant
 
     print("--- Practice stage-1: yellow cursor")
     #playInstruct(1)
@@ -227,7 +230,7 @@ def runPractice():
     goToCenter(MOVE_SPEED) # Bring the arm back to the center first
 
     # Use a straight-ahead direction for familiarization trials
-    angle = 0   
+    angle = dc['mydesign']['settings']['angle']   
     showTarget(angle)
     print("--- Press <ESC> to continue after giving your instruction!\n")
 
@@ -397,7 +400,7 @@ def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
                 start_time = time.time()
                 robot.wshm('fvv_trial_phase', 2)
 
-        # (7) If the subject has reached the the target, check if the subject has moved 
+        # (7) Then if the subject has started moving, check if the subject has moved 
         # sufficiently far AND is coming to a stop.   
         elif robot.rshm('fvv_trial_phase')==2:
             if dc["subjd"] > 0.8*TARGETDIST and vtot < 0.05:
@@ -473,8 +476,8 @@ def checkEndpoint(angle, feedback, rbias):
 	status = 0
 
     # This is where I save logfile content! Note the delimiter is a comma.
-    dc['logAccuracy'] = "%d,%.3f,%.3f,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n"%(dc['trial'],PDy,dc['PDmaxv'],angle,status,tx,ty,tx-dc['cx'],ty-dc['cy'],dc['fX'],dc['fY'],dc['Vmax'],dc['Vxmax'],dc['Vymax'])
-    saveLog()
+    dc['logAccuracy'] = "%d,%.5f,%.5f,%d,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n"%(dc['trial'],PDy,dc['PDmaxv'],angle,status,tx,ty,tx-dc['cx'],ty-dc['cy'],dc['fX'],dc['fY'],dc['Vmax'],dc['Vxmax'],dc['Vymax'])
+    saveLog()  # << Call the function to save the logfile!
 
 
 
@@ -518,18 +521,36 @@ playAudio = BooleanVar()
 # we need to have a way to do the conversion so as to show the position properly.
 
 # This performs the coeff readout directly instead of hardcoding the coeff values.
-caldata = os.popen('./ParseCalData cal_data.txt').read()
+#caldata = os.popen('./ParseCalData exper_design/cal_data.txt').read()
 #print caldata.split("\t")
-coeff = caldata.split('\t')
+#coeff = caldata.split('\t')
 
-coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
+#coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
 
+#def rob_to_screen(robx, roby):
+#    px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
+#    py = float(coeff[3]) + float(coeff[4])*roby #- float(coeff[5])*robx*roby
+#    return (px,py)
+    # Changed after the robot moved to a new place.
+
+
+def load_calib():
+    #fname = tkFileDialog.askopenfilename(filetypes=[('pickles','.pickle27')])
+    fname = 'exper_design/' +'/visual_calib.pickle27'
+    if fname!= None:
+        print("Opening",fname)
+        (captured,regrs) = pickle.load(open(fname,'rb'))
+        global calib
+        calib = regrs
+	#print("calib data:",calib)
+        return
 
 def rob_to_screen(robx, roby):
-    px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
-    py = float(coeff[3]) + float(coeff[4])*roby #- float(coeff[5])*robx*roby
-    return (px,py)
-    # Changed after the robot moved to a new place.
+    # (from Moh's). We no longer use the old ParseCalData.
+    global calib
+    return (int(calib["interc.x"] + (robx*calib["slope1.x"]) + (roby*calib["slope2.x"])),
+            int(calib["interc.y"] + (robx*calib["slope1.y"]) + (roby*calib["slope2.y"])))
+
 
 
 def mainGUI():
@@ -771,6 +792,9 @@ print("\nRobot successfully loaded...\n")
 
 robot.zeroft()
 print("\n\nPress START or <Enter> key to continue\n")
+
+global calib
+load_calib() # Load calibration file for rob_screen transformation
 
 mainGUI()
 robot_canvas()

@@ -16,7 +16,8 @@ Revisions : Finalizing the working script (Aug 25)
             Setting up the WM test portion again; incorporating this during practice session too (Sept 14)
             Added a flag to prevent pressing LEFT/RIGHT twice. Cleaning up clutter on the terminal (Sept 21)
             Minor edits (Oct 2)
-            Minor edits on trial-lag option and p_test(nn) function to reduce # WM trials (Nov 15)        
+            Minor edits on trial-lag option and p_test(nn) function to reduce # WM trials (Nov 15)   
+            Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh) (May 2018).     
 """
 
 
@@ -28,6 +29,7 @@ import json
 import math
 import random
 import subprocess
+import pickle
 
 
 # Global definition of variables
@@ -44,7 +46,7 @@ showFlag     = True   # Show yellow hand cursor position throughout (default: YE
 dc["active"] = False  # Adding this flag to show that the test is currently active!!
 dc["responded"] = False  # To prevent user from responding twice during WM Test (Flag=1 means responded)
 test_angle = [-45,45] # Which side are we testing? Left/right?
-wm_lag = ["lag-1","lag-2","lag-3","lag-4"]  # The type of lag used in WM test
+wm_lag = ["lag-1","lag-2","lag-3","lag-4","no test"]  # The type of lag used in WM test
 
 
 # Global definition for test-related parameters. This list replaces exper_design file.
@@ -54,7 +56,7 @@ NTRIAL_TRAIN = 60     # Training trials with feedback
 MINTRIAL_SET = 15     # Minimum trials before we set the actual target direction during Motor_Pre
 ROT_MAG = 5           # Value of rotation angle for WM Test.
 INIT_DIR_RANGE = 45   # Range in which participants can get the first explosion during Motor_Pre
-YCENTER     = -0.005  # Let's fixed the Y-center position!
+YCENTER     = 0.000   # Let's fixed the Y-center position!
 TARGETDIST  = 0.15    # move 15 cm from the center position (default!)
 START_SIZE  = 0.008   #  8 mm start point radius
 CURSOR_SIZE = 0.003   #  3 mm cursor point radius
@@ -259,8 +261,9 @@ def runPractice():
     showCursorBar((x,y))
     showTarget(dc['angle'])     # Show the target arc at this point
 
-    triallag = dc['lag'].split('-')[1]  # This is for WM test
-    triallag = int(triallag) # Ensure this is numeric!  
+    triallag = dc['lag'].split('-')[1] if dc['lag'] != "no test" else 0
+    print triallag
+    triallag = int(triallag) # Ensure this is numeric. If this value = 0, it means no WM Test!!  
 
     playInstruct(0)  # added Sept 11 for the opening speech...
 
@@ -277,7 +280,7 @@ def runPractice():
     playInstruct(3)
 
     # 20 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,21):
+    for each_trial in range(1,16):
         dc['curtrial'] = each_trial
         print("\nNew Round %i ----------------- "%each_trial)
         # This is the point where subject starts to move to the target
@@ -304,7 +307,7 @@ def runPractice():
         time.sleep(0.01)  # loop every 10 msec
 
     # 10 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,11):
+    for each_trial in range(1,10):
         dc['curtrial'] = each_trial
         # This is the point where subject starts to move to the target
         print("\nNew Round %i ----------------- "%each_trial)
@@ -366,7 +369,7 @@ def runPractice():
     dc["reward_width_deg"] = np.nan
     #triallag = 1 if dc['lag'] == "lag-1" else 2
 
-    for each_trial in range(1,16):
+    for each_trial in range(1,18):
         dc['curtrial'] = each_trial
         print("\nNew Round %i ----------------- "%each_trial)
         to_target()
@@ -399,8 +402,9 @@ def runBlock():
         time.sleep(0.01)  # loop every 10 msec
 
     # Read the lag setting from the GUI. This decides the type of WM test lag.
-    triallag = dc['lag'].split('-')[1]
-    triallag = int(triallag) # Ensure this is numeric!
+    triallag = dc['lag'].split('-')[1] if dc['lag'] != "no test" else 0
+    print triallag
+    triallag = int(triallag) # Ensure this is numeric. If this value = 0, it means no WM Test!!  
 
     saveLog(True)    # Write column headers in the logfile (Jun9)   
 
@@ -547,6 +551,7 @@ def to_target():
 def return_toStart(triallag):
     """ This handles the segment when hand position moves back to the center (start). It depends 
     on whether the current block is training block, and current trial is a WM test trial.
+    Update: If triallag is 0, you selected no WM test from the GUI. So, training proceeds w/o WM test.
     """
     
     if "most.recent.traj" in dc: ############################
@@ -569,7 +574,7 @@ def return_toStart(triallag):
     # Check if this is a training block and if the next trial is test trial to replay 
     # trajectory with a certain probability. WM Test only happens during training! 
 
-    if (dc['task'] == "training") & (random.random() < p_test(nsince_last_test)): 
+    if (dc['task'] == "training") & (random.random() < p_test(nsince_last_test)) & triallag > 0: 
        master.update()
        # First, retrieve the desired test trajectory to replay...
        select_traj(triallag)
@@ -897,7 +902,7 @@ def checkEndpoint(angle):
 	status = 0
 
     # IMPORTANT = We build a string for saving movement kinematics & reward status--revised!
-    dc['logAnswer'] = "%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%f,%d"% \
+    dc['logAnswer'] = "%d,%d,%d,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f,%f,%d"% \
                       (dc['curtrial'],dc['angle'],status,dc['baseline_angle_shift'],X_end,Y_end,dc['speed'],dc["subjxmax"],dc["subjymax"],PDy,PDy_shift,dc['angle_end_shift'],dc['angle_maxv_deg'],dc['angle_maxv_shift'],dc['reward_width_deg'],dc['session'])
 
 
@@ -928,18 +933,36 @@ playwav = BooleanVar()
 # we need to have a way to do the conversion so as to show the position properly.
 
 # This performs the coeff readout directly instead of hardcoding the coeff values.
-caldata = os.popen('./ParseCalData cal_data.txt').read()
+#caldata = os.popen('./ParseCalData exper_design/cal_data.txt').read()
 #print caldata.split("\t")
-coeff = caldata.split('\t')
+#coeff = caldata.split('\t')
 
 #coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
 
+#def rob_to_screen(robx, roby):
+#    px = float(coeff[0]) + float(coeff[1])*robx - float(coeff[2])*robx*roby
+#    py = float(coeff[3]) + float(coeff[4])*roby - float(coeff[5])*robx*roby
+#   return (px,py)
 
+
+def load_calib():
+    #fname = tkFileDialog.askopenfilename(filetypes=[('pickles','.pickle27')])
+    fname = 'exper_design/' +'/visual_calib.pickle27'
+    if fname!= None:
+        print("Opening",fname)
+        (captured,regrs) = pickle.load(open(fname,'rb'))
+        global calib
+        calib = regrs
+	#print("calib data:",calib)
+        return
 
 def rob_to_screen(robx, roby):
-    px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
-    py = float(coeff[3]) + float(coeff[4])*roby #- float(coeff[5])*robx*roby
-    return (px,py)
+    # (from Moh's). We no longer use the old ParseCalData.
+    global calib
+    return (int(calib["interc.x"] + (robx*calib["slope1.x"]) + (roby*calib["slope2.x"])),
+            int(calib["interc.y"] + (robx*calib["slope1.y"]) + (roby*calib["slope2.y"])))
+
+
 
 
 # For canvas on the main GUI to draw subject's trajectory
@@ -1033,10 +1056,10 @@ def clickStart(): # GUI button click!
 
 def OptionSelectEvent(event):
     # This is to extract the test type and lag of the current task which will determine
-    # the type of test parameters, e.g. angle.
+    # the type of test parameters, e.g. angle. Put them in a dictionary.
     dc['angle'] = vardeg.get()
     dc['lag']   = varopt.get()
-    print ("You have selected %s workspace and WM test %s"%(dc['lag'],dc['angle']))
+    print ("You have selected %s-deg workspace and %s WM test"%(dc['angle'],dc['lag']))
     #e5.config(state='normal') if (temp[0]=="training") else e5.config(state='disabled')
 
 
@@ -1237,12 +1260,18 @@ os.system("clear")  # Clear the terminal
 robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")
 
+global calib
+load_calib() # Load calibration file for rob_screen transformation
+
 robot.zeroft()
 
 print("\n\nPress START or <Enter> key to continue\n")
 
 global traj_display
 traj_display = None
+
+global calib
+load_calib() # Load calibration file for rob_screen transformation
 
 mainGUI()
 robot_canvas()

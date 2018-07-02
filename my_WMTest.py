@@ -20,6 +20,7 @@ import os
 import time
 import json
 import math
+import pickle
 
 from Tkinter import *	# Importing the Tkinter library
 
@@ -37,7 +38,7 @@ CURSOR_SIZE = 0.009  #  9 mm start radius
 TARGETHOLD  = 0.5    # 500 msec delay at the target point
 WAITTIME    = 1.0    # 1000 msec general wait or delay time 
 MOVE_SPEED  = 0.9    # duration (in sec) of the robot moving the subject to the center
-YCENTER     = 0.005  # Let's fixed the Y-center position (useful!!), so that all subjects have
+YCENTER     = 0.000  # Let's fixed the Y-center position (useful!!), so that all subjects have
                      # a fixed distance of the robot handle from the body.
 
 w, h  = 1920,1080    # Samsung LCD size
@@ -132,7 +133,7 @@ def clickStart(event):
     if somatic.get(): 
         mymsg.set("Note: Starting Somatic WM Test (default)")
         print("\nNote: Starting Somatic WM Test (default)\n")
-        dc['wmtest'],mybg = "Som","white"  
+        dc['wmtest'],mybg = "Som","black"    #...........
     else: 
         mymsg.set("Note = Starting Visuospatial WM Test .....")
         print("\nNote = Starting Visuospatial WM Test .....\n")
@@ -266,6 +267,8 @@ def runBlock (practice_flag):
         if not somatic.get(): showBox()  # This is only for Visuosp test
         playInstruct(1)
     
+    #showCursor([robot.rshm('x'), robot.rshm('y')])  # Cursor should be at the start!
+
     for xxx in dc['mydesign']: # Going through each trial
         index  = xxx['trial']
         anchors= xxx['anchors']
@@ -312,10 +315,10 @@ def runBlock (practice_flag):
 
 def to_target(directions):
     """ This handles the whole segment when subject moves to hidden target """
-
     if type(directions)==list:
         # If this is a list, it means a set of anchors
         for direction in directions:
+            #showCursor([robot.rshm('x'), robot.rshm('y')])  #>>>>>>>>
             print("Anchor direction: " + str(direction))
             # Put flag to 2, robot is towards the target location
             robot.wshm('fvv_trial_phase', 2)
@@ -324,6 +327,7 @@ def to_target(directions):
             # Put flag to 0, robot is towards the target location
             robot.wshm('fvv_trial_phase', 0)
             # Return to centre!
+            #showCursor([robot.rshm('x'), robot.rshm('y')])  #>>>>>>>>
             if somatic.get() : goToCenter(MOVE_SPEED) 
             time.sleep(TARGETHOLD)
             dc['log'] = dc['log'] + " " + str(direction)
@@ -375,18 +379,37 @@ filenum = StringVar()
 mymsg   = StringVar()
 somatic = BooleanVar()
 
-
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
 
-caldata = os.popen('./ParseCalData cal_data.txt').read()
+#caldata = os.popen('./ParseCalData exper_design/cal_data.txt').read()
 #print caldata.split("\t")
-coeff = caldata.split('\t')
+#coeff = caldata.split('\t')
+
+#def rob_to_screen(robx, roby):
+#    px = float(coeff[0]) + float(coeff[1])*robx + float(coeff[2])*robx*roby
+#   py = float(coeff[3]) + float(coeff[4])*roby + float(coeff[5])*robx*roby
+#    return (px,py)
+
+def load_calib():
+    #fname = tkFileDialog.askopenfilename(filetypes=[('pickles','.pickle27')])
+    fname = 'exper_design/' +'/visual_calib.pickle27'
+    if fname!= None:
+        print("Opening",fname)
+        (captured,regrs) = pickle.load(open(fname,'rb'))
+        global calib
+        calib = regrs
+	#print("calib data:",calib)
+        return
 
 def rob_to_screen(robx, roby):
-    px = float(coeff[0]) + float(coeff[1])*robx + float(coeff[2])*robx*roby
-    py = float(coeff[3]) + float(coeff[4])*roby + float(coeff[5])*robx*roby
-    return (px,py)
+    # (from Moh's). We no longer use the old ParseCalData.
+    global calib
+    return (int(calib["interc.x"] + (robx*calib["slope1.x"]) + (roby*calib["slope2.x"])),
+            int(calib["interc.y"] + (robx*calib["slope1.y"]) + (roby*calib["slope2.y"])))
+
+
+
 
 def mainGUI():
     # Create two different frames on the master -----
@@ -433,6 +456,7 @@ def mainGUI():
     myButton3.grid(row=1, column=1, padx = 10, pady = 5)
     
 
+
 def clickYes(): # Is "Yes" GUI button clicked?
     enterYes(True)
 
@@ -464,6 +488,22 @@ def robot_canvas():
     win = Canvas(samsung, width=w, height=h)  # 'win' is a canvas on Samsung()
     win.pack()
     win.create_rectangle(0, 0, w, h, fill="black", tag="canvas")
+    win.create_oval ([0,0,1,1], width=1, fill="black", tag="hand")  ## Added, for showing hand cursor position
+
+
+# Added for debugging purpose to see whether the robot follows what being asked to move!!
+def showCursor(position, color="yellow"):
+    """   Draw the cursor at the current hand position (if not outside the start circle)
+    """
+    (x,y) = position  #print("Showing cursor bar!")   
+    print x,y
+    # Prepare to draw current hand cursor in the robot coordinate
+    x1, y1 = rob_to_screen(x-CURSOR_SIZE/2, y-CURSOR_SIZE/2)
+    x2, y2 = rob_to_screen(x+CURSOR_SIZE/2, y+CURSOR_SIZE/2)
+    win.create_oval (*[x1,y1,x2,y2], width=1, fill="yellow", tag="hand")
+    #win.itemconfig("hand",fill=color)
+    #win.coords("hand",*[x1,y1,x2,y2])
+
 
 
 def showImage(name, px=w/2, py=h/2, delay=1.0):
@@ -511,9 +551,11 @@ print("\nRobot successfully loaded...")
 
 robot.zeroft()
 
+global calib
+load_calib() # Load calibration file for rob_screen transformation
+
 mainGUI()
 robot_canvas()
-
 
 keep_going = True
 

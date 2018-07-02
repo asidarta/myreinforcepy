@@ -974,7 +974,7 @@ playAudio = BooleanVar()
 #coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
 
 # This performs the coeff readout directly instead of hardcoding the coeff values.
-caldata = os.popen('./ParseCalData cal_data.txt').read()
+caldata = os.popen('./ParseCalData exper_design/cal_data.txt').read()
 #print caldata.split("\t")
 coeff = caldata.split('\t')
 

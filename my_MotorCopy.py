@@ -1,4 +1,4 @@
-"#!/usr/bin/env python2
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
 Created on Wed Aug 18 15:24:50 2017 @author: ae2010
@@ -16,7 +16,7 @@ import time
 import math
 import random
 import subprocess
-
+import pickle
 
 # Global definition of variables
 dc = {}               # dictionary for important param
@@ -604,12 +604,30 @@ playwav = BooleanVar()
 # we need to have a way to do the conversion so as to show the position properly.
 
 ### Updated coefficient we just moved to a new lab!
-coeff = "1.004991e+03,1.848501e+03,4.531727e+02,2.106822e+02,1.877361e+03,1.084496e".split(',')
+#coeff = "1.004991e+03,1.848501e+03,4.531727e+02,2.106822e+02,1.877361e+03,1.084496e".split(',')
+
+#def rob_to_screen(robx, roby):
+#    px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
+#    py = float(coeff[3]) + float(coeff[4])*roby #- float(coeff[5])*robx*roby
+#    return (px,py)
+
+def load_calib():
+    #fname = tkFileDialog.askopenfilename(filetypes=[('pickles','.pickle27')])
+    fname = 'exper_design/' +'/visual_calib.pickle27'
+    if fname!= None:
+        print("Opening",fname)
+        (captured,regrs) = pickle.load(open(fname,'rb'))
+        global calib
+        calib = regrs
+	#print("calib data:",calib)
+        return
 
 def rob_to_screen(robx, roby):
-    px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
-    py = float(coeff[3]) + float(coeff[4])*roby #- float(coeff[5])*robx*roby
-    return (px,py)
+    # (from Moh's). We no longer use the old ParseCalData.
+    global calib
+    return (int(calib["interc.x"] + (robx*calib["slope1.x"]) + (roby*calib["slope2.x"])),
+            int(calib["interc.y"] + (robx*calib["slope1.y"]) + (roby*calib["slope2.y"])))
+
 
 
 # For canvas on the main GUI to draw subject's trajectory
@@ -900,6 +918,9 @@ print("\n\nPress START or <Enter> key to continue\n")
 
 global traj_display
 traj_display = None
+
+global calib
+load_calib() # Load calibration file for rob_screen transformation
 
 mainGUI()
 robot_canvas()
