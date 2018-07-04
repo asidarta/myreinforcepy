@@ -59,7 +59,6 @@ def quit():
 
 
 def bailout():
-    samsung.destroy()
     master.destroy() # Destroy Tk
     robot.unload()   # Close/kill robot process
     print("\nOkie! Bye-bye...\n")
@@ -578,7 +577,7 @@ while keep_going:
     robot.rshm("curl")
     master.update_idletasks()
     master.update()
-    #time.sleep(0.04) # 40 msec frame-rate of GUI update
+    time.sleep(0.04) # 40 msec frame-rate of GUI update
 
 # Run this bailout function after QUIT is pressed!! Place it at the very end of the code. 
 # [Updated:Jul 1]

@@ -18,7 +18,8 @@ Revisions : Finalizing the working script (Aug 25)
             Minor edits (Oct 2)
             Minor edits on trial-lag option and p_test(nn) function to reduce # WM trials (Nov 15)   
             Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh).
-            System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)     
+            System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)
+            Minor edits, bugs fixed (Jul 4)     
 """
 
 
@@ -51,12 +52,13 @@ keep_going   = True   # flag to indicate script is running, until quit button is
 
 dc["active"] = False  # Adding this flag to show that the test is currently active!!
 dc["responded"] = False  # To prevent user from responding twice during WM Test (Flag=1 means responded)
+dc['logAnswer'] = None
 test_angle = [-45,45] # Which side are we testing? Left/right?
 wm_lag = ["lag-1","lag-2","lag-3","lag-4","no test"]  # The type of lag used in WM test
 
 
 # Global definition for test-related parameters. This list replaces exper_design file.
-VER_SOFT = "2.0"
+VER_SOFT = "3.0"
 NTRIAL_MOTOR = 25     # Relevant only for post-test
 NTRIAL_TRAIN = 50     # Training trials with feedback
 MINTRIAL_SET = 15     # Minimum trials before we set the actual target direction during Motor_Pre
@@ -91,7 +93,6 @@ def quit():
 
 
 def bailout():
-    samsung.destroy()
     master.destroy() # Destroy Tk
     robot.unload()   # Close/kill robot process
     print("\nOkie! Bye-bye...\n")
@@ -286,114 +287,122 @@ def runPractice():
     print("\n--- Practice stage-1: Move towards the target arc")
     showFlag = True
 
-    # Show how to move forward and how the robot brings the arm back.
+    # Show how to move forward and how the robot brings the arm back. [Updated with cleaner bailout!]
     playInstruct(1)
     to_target()
-    playInstruct(2)
-    showImage("curves_L.gif",570,-30,3) if dc['angle'] > 0 else showImage("curves_R.gif",570,-30,3)
-    return_toStart(triallag)
-    playInstruct(3)
+    if keep_going: 
+    	playInstruct(2)
+    	showImage("curves_L.gif",570,-30,3) if dc['angle'] > 0 else showImage("curves_R.gif",570,-30,3)
+    	return_toStart(triallag)
+	playInstruct(3)
+	# 20 trials for the subjects to familiarize with the target distance + speed
+    	for each_trial in range(1,16):
+          dc['curtrial'] = each_trial
+          print("\nNew Round %i ----------------- "%each_trial)
+          # This is the point where subject starts to move to the target
+          to_target()    
+          # Go back to center and continue to the next trial.
+          return_toStart(triallag)
+          each_trial = each_trial + 1
+          if not keep_going: break     # After QUIT is pressed, break the loop     
 
-    # 20 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,16):
-        dc['curtrial'] = each_trial
-        print("\nNew Round %i ----------------- "%each_trial)
-        # This is the point where subject starts to move to the target
-        to_target()    
-        # Go back to center and continue to the next trial.
-        return_toStart(triallag)
-        each_trial = each_trial + 1
+    	goToCenter(MOVE_SPEED) # Bring the arm back to the center first
+    	robot.stay()
+    	showTarget(dc['angle'], "black")  # Don't show the target arc now
+    	showFlag = False
 
-    goToCenter(MOVE_SPEED) # Bring the arm back to the center first
     #----------------------------------------------------------------
-    robot.stay()
-    showTarget(dc['angle'], "black")  # Don't show the target arc now
-    showFlag = False
-
     print("\n--- Practice stage-2: Occluded arm, yellow cursor off!\n")
     dc['task'] = "motor_post"
-    playInstruct(4)
 
-    print("\n###  Press <Esc> after giving the instruction...")
-    repeatFlag = True
-    while repeatFlag:
-        master.update_idletasks()
-        master.update()
-        time.sleep(0.01)  # loop every 10 msec
+    if keep_going: 
+    	playInstruct(4)
+    	print("\n###  Press <Esc> after giving the instruction...")
+    	repeatFlag = True
+    	while repeatFlag:
+          master.update_idletasks()
+          master.update()
+          time.sleep(0.01)  # loop every 10 msec
+          if not keep_going: break     # After QUIT is pressed, break the loop     
 
-    # 10 trials for the subjects to familiarize with the target distance + speed
-    for each_trial in range(1,10):
-        dc['curtrial'] = each_trial
-        # This is the point where subject starts to move to the target
-        print("\nNew Round %i ----------------- "%each_trial)
-        to_target()    
-        # Go back to center and continue to the next trial.
-        return_toStart(triallag)
-        each_trial = each_trial + 1
-
+    	# 10 trials for the subjects to familiarize with the target distance + speed
+    	for each_trial in range(1,10):
+          dc['curtrial'] = each_trial
+          # This is the point where subject starts to move to the target
+          print("\nNew Round %i ----------------- "%each_trial)
+          to_target()    
+          # Go back to center and continue to the next trial.
+          return_toStart(triallag)
+          each_trial = each_trial + 1
+          if not keep_going: break     # After QUIT is pressed, break the loop     
 
     #----------------------------------------------------------------
     print("\n--- Practice stage-3: Showing explosion + score \n")
-    playInstruct(5)
-    time.sleep(2)
-    playAudio("explo.wav")
-    showImage("Explosion_final.gif",900,130,2)   # Show booms for 2 sec!
-    showImage("score10.gif",930,260,2)
-    robot.stay()
+    if keep_going: 
+    	playInstruct(5)
+    	time.sleep(2)
+    	playAudio("explo.wav")
+    	showImage("Explosion_final.gif",900,130,2)   # Show booms for 2 sec!
+    	showImage("score10.gif",930,260,2)
+    	robot.stay()
 
-    playInstruct(6)   # Continue the instruction...
-    print("\n###  Press <Esc> after giving the instruction...")    
-    repeatFlag = True
-    while repeatFlag:
-        master.update_idletasks()
-        master.update()
-        time.sleep(0.01)  # loop every 10 msec
+	playInstruct(6)   # Continue the instruction...
+    	print("\n###  Press <Esc> after giving the instruction...")    
+    	repeatFlag = True
+    	while repeatFlag:
+          master.update_idletasks()
+          master.update()
+          time.sleep(0.01)  # loop every 10 msec
+          if not keep_going: break     # After QUIT is pressed, break the loop     
 
     #----------------------------------------------------------------
     print("\n--- Practice stage-4: Explaining WM Test \n")
+    if keep_going and (triallag>0): 
+	playInstruct(7)
+    	showImage("test_trial.gif",700,150,2)
+    	playInstruct(8)
+    	# Show what rotated trajectory means. This depends on whether left/right workspace.
+    	if dc['angle'] > 0:
+	  showImage("own_L1.gif",550,0,1.5)
+	  showImage("own_L2.gif",550,0,4)
+	  showImage("own_L3.gif",550,0,1)
+	  showImage("own_L4.gif",550,0,2) 
+	  showImage("own_L5.gif",550,0,2) 
+    	else:
+          showImage("own_R1.gif",550,0,1.5)
+     	  showImage("own_R2.gif",550,0,4)
+    	  showImage("own_R3.gif",550,0,1) 
+	  showImage("own_R4.gif",550,0,2) 
+    	  showImage("own_R5.gif",550,0,2)
 
-    playInstruct(7)
-    showImage("test_trial.gif",700,150,2)
-    playInstruct(8)
-    # Show what rotated trajectory means. This depends on whether left/right workspace.
-    if dc['angle'] > 0:
-	showImage("own_L1.gif",550,0,1.5)
-	showImage("own_L2.gif",550,0,4)
-	showImage("own_L3.gif",550,0,1)
-	showImage("own_L4.gif",550,0,2) 
-	showImage("own_L5.gif",550,0,2) 
-    else:
-        showImage("own_R1.gif",550,0,1.5)
-     	showImage("own_R2.gif",550,0,4)
-    	showImage("own_R3.gif",550,0,1) 
-	showImage("own_R4.gif",550,0,2) 
-    	showImage("own_R5.gif",550,0,2)
+    	playInstruct(9)
 
-    playInstruct(9)
-
-    print("###  Press <Esc> after giving the instruction...")   
-    global nsince_last_test
-    nsince_last_test = 0 
-    repeatFlag = True
-    while repeatFlag:
-        master.update_idletasks()
-        master.update()
-        time.sleep(0.01)  # loop every 10 msec
+    	print("###  Press <Esc> after giving the instruction...")   
+    	global nsince_last_test
+    	nsince_last_test = 0 
+    	repeatFlag = True
+    	while repeatFlag:
+          master.update_idletasks()
+          master.update()
+          time.sleep(0.01)  # loop every 10 msec
+          if not keep_going: break     # After QUIT is pressed, break the loop     
         
-    dc['task'] = "training"
-    dc["reward_width_deg"] = np.nan
-    #triallag = 1 if dc['lag'] == "lag-1" else 2
+    	dc['task'] = "training"
+    	dc["reward_width_deg"] = np.nan
+    	#triallag = 1 if dc['lag'] == "lag-1" else 2
 
-    for each_trial in range(1,18):
-        dc['curtrial'] = each_trial
-        print("\nNew Round %i ----------------- "%each_trial)
-        to_target()
-        return_toStart(triallag)
-        each_trial = each_trial + 1
-    
-    print("\n\n#### Instruction block has ended! Continue with the actual experiment?? \n")
-    showTarget(dc['angle'])     # Show the target arc at this point
-    dc["active"] = False    # flag stating we are already running
+    	for each_trial in range(1,18):
+          dc['curtrial'] = each_trial
+          print("\nNew Round %i ----------------- "%each_trial)
+          to_target()
+          return_toStart(triallag)
+          each_trial = each_trial + 1
+          if not keep_going: break     # After QUIT is pressed, break the loop     
+
+    if keep_going: 
+	print("\n\n#### Instruction block has ended! Continue with the actual experiment?? \n")
+    	showTarget(dc['angle'])     # Show the target arc at this point
+    	dc["active"] = False        # flag stating we are already running
 
 
     
@@ -411,7 +420,7 @@ def runBlock():
     print("\n### Kindly press <Esc> to continue......\n\n")
     global repeatFlag  # Pause to remind subjects what to do before start the actual test!
     repeatFlag = True
-    while repeatFlag:
+    while repeatFlag and keep_going:
         master.update_idletasks()
         master.update()
         time.sleep(0.01)  # loop every 10 msec
@@ -441,23 +450,27 @@ def runBlock():
        dc['curtrial'] = each_trial
        print("\nNew Round %i ----------------- "%each_trial)
        robot.wshm('fvv_trial_no', each_trial)
-       to_target()                   # Part 1: Reaching out to target
-       return_toStart(triallag)      # Part 2: Moving back to center
-       saveLog()                     # Finally, save the logged data
-       each_trial = each_trial + 1
-       if not keep_going: break     # After QUIT is pressed, break the loop     
+       to_target()               # Part 1: Reaching out to target
+       return_toStart(triallag)  # Part 2: Moving back to center
+       if not keep_going: 
+           break		 # After QUIT is pressed, break the loop     
+       else:
+           saveLog()             # Finally, save the logged data
+           each_trial = each_trial + 1
 
     # ---------------- RUNNING FOR EACH TRIAL IN THE BLOCK ------------------
     each_trial = 1
     while each_trial < ntrial+1:
-        dc['curtrial'] = each_trial
-        print("\nNew Round %i ----------------- "%each_trial)
-        robot.wshm('fvv_trial_no', each_trial)
-        to_target()                   # Part 1: Reaching out to target
-        return_toStart(triallag)      # Part 2: Moving back to center
-        saveLog()                     # Finally, save the logged data 
-        each_trial = each_trial + 1
-        if not keep_going: break     # After QUIT is pressed, break the loop 
+       dc['curtrial'] = each_trial
+       print("\nNew Round %i ----------------- "%each_trial)
+       robot.wshm('fvv_trial_no', each_trial)
+       to_target()               # Part 1: Reaching out to target
+       return_toStart(triallag)  # Part 2: Moving back to center
+       if not keep_going:	 # After QUIT is pressed, break the loop  
+           break        
+       else:
+           saveLog()             # Finally, save the logged data
+           each_trial = each_trial + 1
 
     # ----------------------------------------------------------------------
     print("\n\n#### Test has ended! You may continue with the NEXT block or QUIT now.....\n")
@@ -533,10 +546,10 @@ def to_target():
                 robot.wshm('fvv_trial_phase', 2)
                 golabel.place(x=-100,y=-100)   
 
-        # (5) If the subject has reached the the target, check if the subject has moved 
+        # (5) If the subject has left the start positoin, check if the subject has moved 
         # sufficiently far AND is coming to a stop.   
         elif robot.rshm('fvv_trial_phase')==2:
-            if dc["subjd"] > 0.75*TARGETDIST and robot.rshm('fvv_vel') < 0.03:
+            if dc["subjd"] > 0.8*TARGETDIST and vtot < 0.03:
                 #If yes, hold the position and compute movement speed.     
                 robot.wshm('fvv_trial_phase', 3)
                 robot.stay() # This automatically stops capturing the trajectory!
@@ -660,7 +673,7 @@ def saveLog(header = False):
     # Making a new directory has been moved to getCenter()...
     #if not os.path.exists(dc['logpath']): os.makedirs(dc['logpath'])
     with open("%s.txt"%dc['logname'],'aw') as log_file:
-        if (header == False):
+        if not header:
             print("Saving trial log.....")
             log_file.write(dc['logAnswer'])  # Save every trial as text line
         else:
@@ -673,7 +686,7 @@ def saveLog(header = False):
 def doAnswer():
     start_time = time.time()  # To count reaction time
     print("Waiting for subject's response")
-    while (not dc['responded']):
+    while keep_going and not dc['responded']:  # Warning, you have to bailout this too!
         master.update_idletasks()
         master.update()
         time.sleep(0.3)
@@ -732,7 +745,7 @@ def replay_traj(rotate_flag = True):
     time.sleep(0.5)
     robot.start_replay()
 
-    while not robot.replay_is_done():
+    while keep_going and not robot.replay_is_done(): ## NOTE: You have to bailout this too...
         master.update()
         pass
 
@@ -851,7 +864,7 @@ def checkEndpoint(angle):
     """
     # Important... Let's check whether we are supposed to give feedback or not. 
     feedback = 0 if dc['task'] in ("pre_train","motor_post") else 1
-    #print("  Checking end-position inside target zone?")
+    print("  Checking end-position inside target zone?")
     
     # Now let's first look at the subject movement endpoint.
     # The idea is to rotate back to make it a straight-ahead (90-deg) movement!
@@ -957,18 +970,6 @@ playwav = BooleanVar()
 # we need to have a way to do the conversion so as to show the position properly.
 
 # This performs the coeff readout directly instead of hardcoding the coeff values.
-#caldata = os.popen('./ParseCalData exper_design/cal_data.txt').read()
-#print caldata.split("\t")
-#coeff = caldata.split('\t')
-
-#coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
-
-#def rob_to_screen(robx, roby):
-#    px = float(coeff[0]) + float(coeff[1])*robx - float(coeff[2])*robx*roby
-#    py = float(coeff[3]) + float(coeff[4])*roby - float(coeff[5])*robx*roby
-#   return (px,py)
-
-
 def load_calib():
     #fname = tkFileDialog.askopenfilename(filetypes=[('pickles','.pickle27')])
     fname = 'exper_design/' +'/visual_calib.pickle27'
@@ -984,7 +985,7 @@ def rob_to_screen(robx, roby):
     # (from Moh's). We no longer use the old ParseCalData.
     global calib
     return (int(calib["interc.x"] + (robx*calib["slope1.x"]) + (roby*calib["slope2.x"])),
-            int(calib["interc.y"] + (robx*calib["slope1.y"]) + (roby*calib["slope2.y"])))
+            1.05*int(calib["interc.y"] + (1.05*robx*calib["slope1.y"]) + (1.05*roby*calib["slope2.y"])))
 
 
 
@@ -1297,9 +1298,10 @@ while keep_going:
     # Although it maintains a main loop, this routine blocks! Use update() instead...
     #master.mainloop()
     #draw_robot()
+    robot.rshm('fvv_trial_phase')
     master.update_idletasks()
     master.update()
-    #time.sleep(0.04) # 40 msec frame-rate of GUI update
+    time.sleep(0.04) # 40 msec frame-rate of GUI update
 
 # Run this bailout function after QUIT is pressed!! Place it at the very end of the code. 
 # [Updated:Jul 1]
