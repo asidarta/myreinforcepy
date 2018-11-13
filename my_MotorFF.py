@@ -13,7 +13,8 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Adding channel trial feature, force transducers readouts. Rearranging to_target function (Sept 22)
            Revising logfile trial number; force and velocity readouts; fixing Ycenter position. (Nov-Dec)
            Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh).
-           System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)     
+           System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)
+           Minor improvement. Title bar removed. Gradual FF added for future use (Jul 6)        
 """
 
 
@@ -36,6 +37,7 @@ dc["active"] = False  # Adding this flag to show that the test is currently acti
 keep_going   = True   # flag to indicate script is running, until quit button is pressed
 
 # Global definition of constants
+GRADUAL_FF  = False   # new flag to indicate whether it is abrupt/gradual FF curl.
 TARGETBAR   = True    # Showing target bar AND cursor bar? Set=False to just show the circles!!
 TARGETDIST  = 0.15    # move 15 cm from the center position (default!)
 TARGETTHICK = 0.004   # 8 mm target thickness....................
@@ -285,12 +287,12 @@ def runPractice():
     dc["active"] = False # mark that we are no longer running
 
 
-
+ 
     
 def runBlock():
     """ The main code once 'Start' or <Enter> key is pressed """
     minvel, maxvel = dc['mydesign']['settings']["velmin"], dc['mydesign']['settings']["velmax"]
-    ffstrength = dc['mydesign']['settings']["ffstrength"]    
+    maxfore = dc['mydesign']['settings']["ffstrength"]    
     saveLog(True) # create a header file in the logfile
 
     # This is to play specific block-instruction
@@ -305,6 +307,14 @@ def runBlock():
     	fdback = xxx['feedback']
     	rbias  = [xxx["negbias"], xxx["posbias"]]
         dc['trial'] = index
+
+        if GRADUAL_FF:   ## Note: New revision to handle gradual curl production
+            if maxforce > 0 and index>5 and index<141:
+		ffstrength = math.pow((index-5),math.log10(maxforce)/math.log10(135)) 
+            else: 
+		ffstrength = maxforce
+        print("\nPrinting force value %.3f for trial %d"%(ffstrength,index))
+        
         print("\nNew Round- %i"%index)
         # Reference: straight-ahead is defined as 90 deg
         angle = angle - 90
@@ -419,7 +429,7 @@ def to_target(angle, ffield="null", fdback=0, rbias=[0,0]):
         # (7) Then if the subject has started moving, check if the subject has moved 
         # sufficiently far AND is coming to a stop.   
         elif robot.rshm('fvv_trial_phase')==2:
-            if dc["subjd"] > 0.8*TARGETDIST and vtot < 0.05:
+            if dc["subjd"] > 0.8*TARGETDIST and dc["subjd"] < 1.6*TARGETDIST and vtot < 0.05:
                 #If yes, hold the position and compute movement speed.     
                 robot.wshm('fvv_trial_phase', 3)
                 robot.stay() # This automatically stops capturing the trajectory!
@@ -512,6 +522,12 @@ def saveLog(header = False):
 
 
 
+def clickStart(): # GUI button click!
+    enterStart(True)
+
+def quitPractice(event):
+    global keepPrac
+    keepPrac = False
 
 
 
@@ -526,9 +542,14 @@ samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
 master.geometry('%dx%d+%d+%d' % (400, 200, 500, 200)) # Nice GUI setting: w,h,x,y   
 master.title("Sensorimotor Learning User Interface")
 master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
+master.bind('<Return>', enterStart)
+master.bind('<Escape>', quitPractice)
+
 
 ### Ensuring subjectś window on the Samsung LCD!
-samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1600, 0)) 
+samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1920, 0))
+### This removes window title bar so that the LCD panel displays objects in full width
+samsung.overrideredirect(1)
 
 
 subjid  = StringVar()
@@ -536,22 +557,6 @@ filenum = StringVar()
 mymsg   = StringVar()
 varopt  = StringVar()
 playAudio = BooleanVar()
-
-# Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
-# we need to have a way to do the conversion so as to show the position properly.
-
-# This performs the coeff readout directly instead of hardcoding the coeff values.
-#caldata = os.popen('./ParseCalData exper_design/cal_data.txt').read()
-#print caldata.split("\t")
-#coeff = caldata.split('\t')
-
-#coeff="9.795386e+02,1.879793e+03,1.311361e+02,2.181227e+02,1.856681e+03,2.858053e+02".split(',') 
-
-#def rob_to_screen(robx, roby):
-#    px = float(coeff[0]) + float(coeff[1])*robx #- float(coeff[2])*robx*roby
-#    py = float(coeff[3]) + float(coeff[4])*roby #- float(coeff[5])*robx*roby
-#    return (px,py)
-    # Changed after the robot moved to a new place.
 
 
 def load_calib():
@@ -623,14 +628,6 @@ def mainGUI():
     myButton1.grid(row=0, padx = 15)
     myButton2 = Button(bottomFrame, text=" QUIT ", bg="#AF0F0F", command=quit)
     myButton2.grid(row=0, column=2, padx = 15, pady = 5)
-
-
-def clickStart(): # GUI button click!
-    enterStart(True)
-
-def quitPractice(event):
-    global keepPrac
-    keepPrac = False
 
 
 
@@ -705,7 +702,7 @@ def showCursorBar(angle, position, color="yellow", barflag=True):
        win.itemconfig("handbar",fill=color)   # Show the target by updating fill color.
        win.tag_lower("start", "hand")
        win.tag_lower("start", "handbar")
-    samsung.update()     # Update the canvas to let changes take effect
+    #samsung.update()     # Update the canvas to let changes take effect
 
 
 
@@ -802,16 +799,11 @@ def showImage(name, px=w/2, py=h/2, delay=1.0):
 
 
 
-master.bind('<Return>', enterStart)
-master.bind('<Escape>', quitPractice)
-
-os.system("clear")
-
-global traj_display
-traj_display = None
 
 
 ######### This is the entry point when you launch the code ################
+
+os.system("clear")
 
 robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")

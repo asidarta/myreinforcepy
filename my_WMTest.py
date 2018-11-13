@@ -12,8 +12,9 @@ Revisions: Confirming the new code works like the old Tcl code (Apr 19)
            Tweaks on how to handle subject's response. Tidying up. (Nov 25)
            Tweaks so no need to quit after each block finished. Fixed YCenter position (Dec 5)
            Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh).
-           System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)     
-
+           System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)
+           Minor edits, bugs fixed. Title bar removed. (Jul 6)
+           Minor edits for TMS-46v project. Design file comes from 1 master file, same for all (Nov 13)        
 """
 
 import robot.interface as robot
@@ -39,9 +40,9 @@ TARGETDIST  = 0.15   # move 15 cm from the center position (default!)
 TARGETTHICK = 0.008  # 16 cm target thickness
 CURSOR_SIZE = 0.009  #  9 mm start radius
 TARGETHOLD  = 0.5    # 500 msec delay at the target point
-WAITTIME    = 1.0    # 1000 msec general wait or delay time 
-MOVE_SPEED  = 0.9    # duration (in sec) of the robot moving the subject to the center
-YCENTER     = 0.000  # Let's fixed the Y-center position (useful!!), so that all subjects have
+WAITTIME    = 1.8    # 1000 msec general wait or delay time 
+MOVE_SPEED  = 0.75   # duration (in sec) of the robot moving the subject to the center
+YCENTER     = 0.0    # Let's fixed the Y-center position (useful!!), so that all subjects have
                      # a fixed distance of the robot handle from the body.
 
 w, h  = 1920,1080    # Samsung LCD size
@@ -111,7 +112,7 @@ def goToCenter(speed):
 
     # Ensure this is a null field first (because we will be updating the position)
     robot.controller(0)
-    print("  Now moving to center: %f,%f"%(dc['cx'],dc['cy']))
+    print("  Now moving to center") #: %f,%f"%(dc['cx'],dc['cy']))
     # Send command to move to cx,cy
     robot.move_stay(dc['cx'],dc['cy'],speed)
 
@@ -147,7 +148,8 @@ def clickStart(event):
         print("##Error## Subject ID and/or file numbers are empty!")
     else:
         print "---Loading for block %s, subject %s..." %(filenum.get(),subjid.get())
-        filepath = "%s/exper_design/%s/%s.txt"%(mypwd,subjid.get(),dc['logfileID'])             
+        #filepath = "%s/exper_design/%s/%s.txt"%(mypwd,subjid.get(),dc['logfileID'])
+        filepath = "%s/exper_design/sub/sub%s.txt"%(mypwd,dc['filenum'])   #### Nov 10, design file from a single master file             
         print filepath
         stages = read_design_file(filepath)   # Next stage depends if file loaded successfully
 
@@ -223,7 +225,7 @@ def angle_pos(theta):
     theta_rad = theta*math.pi/180 # convert to radian
     targetX = TARGETDIST * math.cos(theta_rad) + dc['cx']
     targetY = TARGETDIST * math.sin(theta_rad) + dc['cy']
-    print("  Moving to %f, %f"%(targetX,targetY))
+    #print("  Moving to %f, %f"%(targetX,targetY))
     robot.move_stay(targetX, targetY, MOVE_SPEED)
     #robot.status = robot.move_is_done()
     #while not robot.status:   # check if movement is done
@@ -283,7 +285,7 @@ def runBlock (practice_flag):
         print("\nNew Round- " + str(index))
         mymsg.set("Current Round %d"%(index))
         
-        if index == 12: playAudio("halfway.wav")
+        if index == 13: playAudio("halfway.wav")
 
         showImage("newround.gif",650,450)
         time.sleep(WAITTIME)
@@ -369,6 +371,32 @@ def saveLog():
 
 
 
+def clickYes(): # Is "Yes" GUI button clicked?
+    enterYes(True)
+
+def clickNo(): # Is "No" GUI button clicked?
+    enterNo(True)
+
+def enterYes(event):  # detect keyboard press!
+    global ANSWERFLAG
+    print "Left key pressed to answer YES!"
+    if ANSWERFLAG: print("##Error## Wrong timing, button already pressed....")
+    dc['answer']=1
+    ANSWERFLAG = 1
+
+def enterNo(event):
+    global ANSWERFLAG
+    print "Right key pressed to answer NO!"
+    if ANSWERFLAG: print("##Error## Wrong timing, button already pressed....")
+    dc['answer']=0
+    ANSWERFLAG = 1
+
+
+def checkStatus(): 
+    master.title("-- Somatic WM Test --") if somatic.get() else master.title("Visuospatial WM Test")
+
+
+
 ######## Some parameters that specify how we draw things onto our GUI window
 
 from Tkinter import * # Importing the Tkinter library
@@ -382,8 +410,16 @@ master.title("-- Somatic WM Test --")
 master.geometry('%dx%d+%d+%d' % (370, 170, 500, 200))   # Nice GUI geometry: w,h,x,y 
 master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
 
+master.bind('<Return>', clickStart)
+master.bind('<Left>'  , enterYes)
+master.bind('<Right>' , enterNo)
+
+
 ### Ensuring subjectś window on the Samsung LCD!
-samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1600, 0)) 
+samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1920, 0))
+### This removes window title bar so that the LCD panel displays objects in full width
+samsung.overrideredirect(1)
+
 
 subjid  = StringVar()
 filenum = StringVar()
@@ -392,15 +428,6 @@ somatic = BooleanVar()
 
 # Trick: Because LCD screen coordinate isn't the same as robot coordinate system, 
 # we need to have a way to do the conversion so as to show the position properly.
-
-#caldata = os.popen('./ParseCalData exper_design/cal_data.txt').read()
-#print caldata.split("\t")
-#coeff = caldata.split('\t')
-
-#def rob_to_screen(robx, roby):
-#    px = float(coeff[0]) + float(coeff[1])*robx + float(coeff[2])*robx*roby
-#   py = float(coeff[3]) + float(coeff[4])*roby + float(coeff[5])*robx*roby
-#    return (px,py)
 
 def load_calib():
     #fname = tkFileDialog.askopenfilename(filetypes=[('pickles','.pickle27')])
@@ -418,7 +445,6 @@ def rob_to_screen(robx, roby):
     global calib
     return (int(calib["interc.x"] + (robx*calib["slope1.x"]) + (roby*calib["slope2.x"])),
             int(calib["interc.y"] + (robx*calib["slope1.y"]) + (roby*calib["slope2.y"])))
-
 
 
 
@@ -467,30 +493,6 @@ def mainGUI():
     myButton3.grid(row=1, column=1, padx = 10, pady = 5)
     
 
-
-def clickYes(): # Is "Yes" GUI button clicked?
-    enterYes(True)
-
-def clickNo(): # Is "No" GUI button clicked?
-    enterNo(True)
-
-def enterYes(event):  # detect keyboard press!
-    global ANSWERFLAG
-    print "Left key pressed to answer YES!"
-    if ANSWERFLAG: print("##Error## Wrong timing, button already pressed....")
-    dc['answer']=1
-    ANSWERFLAG = 1
-
-def enterNo(event):
-    global ANSWERFLAG
-    print "Right key pressed to answer NO!"
-    if ANSWERFLAG: print("##Error## Wrong timing, button already pressed....")
-    dc['answer']=0
-    ANSWERFLAG = 1
-
-
-def checkStatus(): 
-    master.title("-- Somatic WM Test --") if somatic.get() else master.title("Visuospatial WM Test")
 
 
 def robot_canvas():
@@ -551,13 +553,10 @@ def showBox():
 
 
 
-master.bind('<Return>', clickStart)
-master.bind('<Left>'  , enterYes)
-master.bind('<Right>' , enterNo)
-
-os.system("clear")
 
 ######### This is the entry point when you launch the code ################
+
+os.system("clear")
 
 robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")

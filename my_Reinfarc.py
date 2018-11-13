@@ -19,7 +19,8 @@ Revisions : Finalizing the working script (Aug 25)
             Minor edits on trial-lag option and p_test(nn) function to reduce # WM trials (Nov 15)   
             Recalibrate encoders, update cal file (Floris). Update the rob_screen mapping using pickle (Moh).
             System migration to "Weasel". Cleaning the way we bailout main loop during quit/exit (Jul 1)
-            Minor edits, bugs fixed (Jul 4)     
+            Bugs fixed. Title bar removed!!! More trial lags for future study... (Jul 6)
+	    Give 2-second delay after the first boom and the actual so-called Block-1 training trials.     
 """
 
 
@@ -61,7 +62,7 @@ wm_lag = ["lag-1","lag-2","lag-3","lag-4","no test"]  # The type of lag used in 
 VER_SOFT = "3.0"
 NTRIAL_MOTOR = 25     # Relevant only for post-test
 NTRIAL_TRAIN = 50     # Training trials with feedback
-MINTRIAL_SET = 15     # Minimum trials before we set the actual target direction during Motor_Pre
+MINTRIAL_SET = 15     # Min. trials before we set the ACTUAL rewarded direction in Random phase
 ROT_MAG = 5           # Value of rotation angle for WM Test.
 INIT_DIR_RANGE = 45   # Range in which participants can get the first explosion during Motor_Pre
 YCENTER     = 0.000   # Let's fixed the Y-center position!
@@ -459,6 +460,7 @@ def runBlock():
            each_trial = each_trial + 1
 
     # ---------------- RUNNING FOR EACH TRIAL IN THE BLOCK ------------------
+    showImage("reminder.gif",200,10,3)    # Updated: give 2-sec delay.
     each_trial = 1
     while each_trial < ntrial+1:
        dc['curtrial'] = each_trial
@@ -534,7 +536,7 @@ def to_target():
         if robot.rshm('fvv_trial_phase')==1:  
             if dc["subjd"]< START_SIZE and vtot < 0.01:
                 #win.itemconfig("start", fill="green")
-                golabel.place(x=850,y=100)   # Show the "Go" signal here.......
+                golabel.place(x=850,y=140)   # Show "Go" signal here, subject may move...!!
                 wingui.itemconfig("rob_pos",fill="yellow")
                 master.update()
                 robot.start_capture()   # Start capturing trajectory (for a later replay!)  
@@ -544,12 +546,12 @@ def to_target():
             elif dc["subjd"] > 0.01:
                 start_time = time.time()
                 robot.wshm('fvv_trial_phase', 2)
-                golabel.place(x=-100,y=-100)   
+                golabel.place(x=-100,y=-100)     # Hide "Go" Signal!
 
         # (5) If the subject has left the start positoin, check if the subject has moved 
         # sufficiently far AND is coming to a stop.   
         elif robot.rshm('fvv_trial_phase')==2:
-            if dc["subjd"] > 0.8*TARGETDIST and vtot < 0.03:
+            if dc["subjd"] > 0.8*TARGETDIST and dc["subjd"] < 1.9*TARGETDIST and vtot < 0.03:
                 #If yes, hold the position and compute movement speed.     
                 robot.wshm('fvv_trial_phase', 3)
                 robot.stay() # This automatically stops capturing the trajectory!
@@ -603,11 +605,13 @@ def return_toStart(triallag):
     	traj_display = wingui.create_line(*coords,fill="green",width=3,tag="traj")
 
     global nsince_last_test
+    #print nsince_last_test
+    #print random.random()
     
     # Check if this is a training block and if the next trial is test trial to replay 
     # trajectory with a certain probability. WM Test only happens during training! 
 
-    if (dc['task'] == "training") & (random.random() < p_test(nsince_last_test)) & triallag > 0: 
+    if (dc['task'] == "training" and random.random() < p_test(nsince_last_test) and triallag > 0): 
        master.update()
        # First, retrieve the desired test trajectory to replay...
        select_traj(triallag)
@@ -761,11 +765,11 @@ def replay_traj(rotate_flag = True):
 
 
 def p_test(nn):  # nn = number of trials since the last WM test trial
-    if   nn<6: return 0
-    elif nn==6: return 0.1
-    elif nn==7: return 0.3
-    elif nn==8: return 0.5
-    else: return 0.8
+    if   nn<=5: return 0
+    elif nn==6: return 0.2
+    elif nn==7: return 0.4
+    elif nn==8: return 0.6
+    else: return 1.0
     
 
 def velocity_check(x,y):
@@ -941,6 +945,39 @@ def checkEndpoint(angle):
 
 
 
+def clickStart(): # GUI button click!
+    enterStart(True)
+
+def OptionSelectEvent(event):
+    # This is to extract the test type and lag of the current task which will determine
+    # the type of test parameters, e.g. angle. Put them in a dictionary.
+    dc['angle'] = vardeg.get()
+    dc['lag']   = varopt.get()
+    print ("You have selected %s-deg workspace and %s WM test"%(dc['angle'],dc['lag']))
+    #e5.config(state='normal') if (temp[0]=="training") else e5.config(state='disabled')
+
+def clickYes(event):
+    print ("Left key pressed to answer LEFT!")
+    if dc["responded"]:  # Is the reply already recorded?
+       print("##Error## Wrong timing to press LEFT/button already pressed....")
+    dc['answer']= 'left'
+    dc["responded"] = True
+
+def clickNo(event):
+    print ("Right key pressed to answer RIGHT!")
+    if dc["responded"]:  # Is the reply already recorded?
+       print("##Error## Wrong timing to press RIGHT/button already pressed....")
+    dc['answer']= 'right'
+    dc["responded"] = True
+
+def contPractice(event):
+    ### Pressing <Esc> will quit the while-loop of a current practice stage then move 
+    ### to the next practice stage. <Esc> key has no effect during ACTUAL TASK!
+    global repeatFlag
+    repeatFlag = False
+
+
+
 
 ######## Some parameters that specify how we draw things onto our GUI window
 
@@ -953,9 +990,16 @@ samsung = Toplevel()  # Create another one, for the robot canvas (Samsung)
 master.geometry('%dx%d+%d+%d' % (550, 540, 500, 200)) # Nice GUI setting: w,h,x,y   
 master.title("Reward-based Sensorimotor Learning")
 master.protocol("WM_DELETE_WINDOW", quit)  # When you press [x] on the GUI
+master.bind('<Return>', enterStart)   # If user presses ENTER then go to [enterStart]
+master.bind('<Left>'  , clickYes)
+master.bind('<Right>' , clickNo)
+master.bind('<Escape>', contPractice)
+
 
 ### Ensuring subjectś window on the Samsung LCD!
-samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1600, 0)) 
+samsung.geometry('%dx%d+%d+%d' % (1920, 1080, 1920, 0))
+### This removes window title bar so that the LCD panel displays objects in full width
+samsung.overrideredirect(1)
 
 
 subjid  = StringVar()
@@ -985,8 +1029,7 @@ def rob_to_screen(robx, roby):
     # (from Moh's). We no longer use the old ParseCalData.
     global calib
     return (int(calib["interc.x"] + (robx*calib["slope1.x"]) + (roby*calib["slope2.x"])),
-            1.05*int(calib["interc.y"] + (1.05*robx*calib["slope1.y"]) + (1.05*roby*calib["slope2.y"])))
-
+             int(calib["interc.y"] + (robx*calib["slope1.y"]) + (roby*calib["slope2.y"])))
 
 
 
@@ -1062,7 +1105,6 @@ def mainGUI():
     wingui.create_oval(cw/2,ch/2,cw/2,ch/2,fill="blue",tag="rob_pos")
 
 
-
 def draw_robot():
     global wingui
     cursor_size = 5
@@ -1072,43 +1114,6 @@ def draw_robot():
     x,y = rob_to_gui(rx, ry)
     wingui.coords("rob_pos",(x-cursor_size,y-cursor_size,x+cursor_size,y+cursor_size))
     wingui.itemconfig("rob_pos",fill="blue")
-
-
-
-def clickStart(): # GUI button click!
-    enterStart(True)
-
-
-def OptionSelectEvent(event):
-    # This is to extract the test type and lag of the current task which will determine
-    # the type of test parameters, e.g. angle. Put them in a dictionary.
-    dc['angle'] = vardeg.get()
-    dc['lag']   = varopt.get()
-    print ("You have selected %s-deg workspace and %s WM test"%(dc['angle'],dc['lag']))
-    #e5.config(state='normal') if (temp[0]=="training") else e5.config(state='disabled')
-
-
-def clickYes(event):
-    print ("Left key pressed to answer LEFT!")
-    if dc["responded"]:  # Is the reply already recorded?
-       print("##Error## Wrong timing to press LEFT/button already pressed....")
-    dc['answer']= 'left'
-    dc["responded"] = True
-
-def clickNo(event):
-    print ("Right key pressed to answer RIGHT!")
-    if dc["responded"]:  # Is the reply already recorded?
-       print("##Error## Wrong timing to press RIGHT/button already pressed....")
-    dc['answer']= 'right'
-    dc["responded"] = True
-
-
-
-def contPractice(event):
-    ### Pressing <Esc> will quit the while-loop of a current practice stage then move 
-    ### to the next practice stage. <Esc> key has no effect during ACTUAL TASK!
-    global repeatFlag
-    repeatFlag = False
 
 
 
@@ -1154,7 +1159,6 @@ def prepareCanvas():
 def showCursorBar(position, color="yellow"):
     """ Draw the cursor at the current position. If showFlag = False, then display only when the 
     hand is within the start circle [Aug 21].
-    Angle    : the angle of the target w.r.t to straight-ahead direction
     Position : the CURRENT hand position in robot coordinates
     color    : the color of the canvas object (default: yellow)
     """
@@ -1272,15 +1276,11 @@ def GoSignal(name="go_signal.gif",px=-100,py=-100):
 
 
 
-master.bind('<Return>', enterStart)   # If user presses ENTER then go to [enterStart]
-master.bind('<Left>'  , clickYes)
-master.bind('<Right>' , clickNo)
-master.bind('<Escape>', contPractice)
-
-os.system("clear")  # Clear the terminal
 
 
 ######### This is the entry point when you launch the code ################
+
+os.system("clear")  # Clear the terminal
 
 robot.load() # Load the robot process
 print("\nRobot successfully loaded...\n")
